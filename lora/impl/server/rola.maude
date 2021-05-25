@@ -1,0 +1,478 @@
+load shim-dynamic
+---load shim-dynamic-test
+
+mod RAMP-F is
+  inc CLIENT-REPLICA .
+  inc MESSAGE .
+  inc VALUES-NAT .
+  inc SHIM-DYNAMIC .
+  pr STRING .
+
+
+  vars CLIENT RID TID RID' TABLE M : Oid .
+  var RIDS : OidSet .
+  vars AS AS' : AttributeSet .
+  vars TXNS TXNS' : ObjList .
+---  var K : Key .
+  vars K K' V V' : String .
+  var X : LocalVar .
+  var REPLICA-TABLE : ReplicaTable .
+  vars OPS OPS' OPS'' : OperationList .
+---  vars V V' : Value .
+---  var WS : WriteSet .
+  vars VARS VARS' : LocalVars .
+  vars RS DS RS' WRITES WRITES' READS : Versions .
+  vars LC VL VL' : KeyTimestamps .
+  var VERSION : Version .
+  vars TS TS' : Timestamp .
+  vars MD MD' KS : KeySet .
+  vars VS VS' : Versions .
+  vars SQN SQN' TXNSQN : Int .
+  var EXPR : Expression .
+---  var RT : KeyReplicas .
+  vars 1STGETS 1STGETS' : 1stGets .
+  vars 2NDGETS 2NDGETS' : 2ndGets .
+  vars VSTS CMTS VSTS' CMTS' ABORTS ABORTS' : VoteSites .
+---  vars T T1 : Float .
+  var FLAG : Bool .
+---  vars RECORD RECORD' : Record .
+  vars N N' : Nat .
+  vars TRANSES TRANSES' : Configuration .
+  var FW : FromWhom .
+  var TXN : Object .
+  var STR : String .
+  var LOCKS : Locks .
+  vars VOTES VOTES' : Vote .
+  var LT : LockType .
+*** For ROLA
+  var TSSQN : TimestampSqn .
+
+
+ crl [start-ro-or-rw-txn] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : < TID : Txn | operations : OPS,
+                                              latest : empty, AS > ;; TXNS,
+                         executing : none,
+                         1stGetSites : 1STGETS, AS' >
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : TXNS,
+                         executing : (< TID : Txn | operations : OPS,
+                                                    latest : vl(OPS,CLIENT), AS >),  --- initialize "v_latest"
+                         1stGetSites : (1STGETS ; 1st(TID,RIDS)), AS' >
+     genGets(OPS,CLIENT,TID,REPLICA-TABLE) 
+     if (not write-only(OPS)) /\
+        RIDS := 1stSites(OPS,REPLICA-TABLE) .
+
+  op vl : OperationList Oid -> KeyTimestamps .
+  eq vl((write(K,V) OPS),CLIENT) = vl(OPS,CLIENT) .
+  eq vl((read(K) OPS),CLIENT) = K |-> ts(CLIENT,-1), vl(OPS,CLIENT) .
+  eq vl(nil,CLIENT) = empty .
+
+  op genGets : OperationList Oid Oid ReplicaTable -> Configuration .
+  eq genGets((read(K) OPS),CLIENT,TID,REPLICA-TABLE) = 
+       genGets(OPS,CLIENT,TID,REPLICA-TABLE)
+       (msg get(TID,K,eptTS,CLIENT) from CLIENT to l(REPLICA-TABLE[K])) . --- eptTS denotes "empty" in line 25
+
+  eq genGets((write(K,V) OPS),CLIENT,TID,REPLICA-TABLE) =
+       genGets(OPS,CLIENT,TID,REPLICA-TABLE) .
+  eq genGets(nil,CLIENT,TID,REPLICA-TABLE) = none .
+
+  op write-only : OperationList -> Bool .
+  eq write-only((OPS read(K) OPS')) = false .
+  eq write-only(OPS) = true [owise] .
+
+  op 1stSites : OperationList ReplicaTable -> OidSet .
+  eq 1stSites((read(K) OPS),REPLICA-TABLE) =
+         l(REPLICA-TABLE[K]) ; 1stSites(OPS,REPLICA-TABLE) .
+  eq 1stSites((write(K,V) OPS),REPLICA-TABLE) =
+       1stSites(OPS,REPLICA-TABLE) .
+  eq 1stSites(nil,REPLICA-TABLE) = empty .
+
+
+ crl [start-wo-txn] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : < TID : Txn | operations : OPS, txnSqn : SQN, AS > ;; TXNS,
+                         executing : none,
+                         voteSites : VSTS, AS' >
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : TXNS,
+                         executing : (< TID : Txn | operations : OPS, txnSqn : SQN, AS >),
+                         voteSites : (VSTS ; voteSites(TID,RIDS)), AS' >
+     genPuts(OPS,CLIENT,TID,SQN,REPLICA-TABLE)
+     if write-only(OPS) /\
+        RIDS := prepareSites(OPS,REPLICA-TABLE) .
+
+  op genPuts : OperationList Oid Oid Nat ReplicaTable -> Configuration .
+  op $genPuts : OperationList Oid Oid Nat ReplicaTable OperationList -> Configuration .
+  eq genPuts(OPS,CLIENT,TID,SQN,REPLICA-TABLE) = $genPuts(OPS,CLIENT,TID,SQN,REPLICA-TABLE,OPS) .
+  eq $genPuts((write(K,V) OPS),CLIENT,TID,SQN,REPLICA-TABLE,(OPS' write(K,V) OPS'')) =
+       $genPuts(OPS,CLIENT,TID,SQN,REPLICA-TABLE,(OPS' write(K,V) OPS''))
+       (msg prepare(TID,version(K,V,ts(CLIENT,SQN),md(OPS' OPS'')),CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq $genPuts((read(K) OPS),CLIENT,TID,SQN,REPLICA-TABLE,OPS') = 
+       $genPuts(OPS,CLIENT,TID,SQN,REPLICA-TABLE,OPS') .
+  eq $genPuts(nil,CLIENT,TID,SQN,REPLICA-TABLE,OPS') = none .  
+
+  
+  op md : OperationList -> KeySet .
+  eq md((write(K,V) OPS)) = K, md(OPS) .
+  eq md((read(K) OPS)) = md(OPS) .
+  eq md(nil) = empty .
+
+  op prepareSites : OperationList ReplicaTable -> OidSet .
+  eq prepareSites((write(K,V) OPS),REPLICA-TABLE) =
+       l(REPLICA-TABLE[K]) ; prepareSites(OPS,REPLICA-TABLE) .
+  eq prepareSites((read(K) OPS),REPLICA-TABLE) =
+       prepareSites(OPS,REPLICA-TABLE) .
+  eq prepareSites(nil,REPLICA-TABLE) = empty .
+
+
+  *********
+  rl [receive-prepare-wo] :
+     < RID : Replica | datastore : VS,
+                       sqn : SQN,
+                       tsSqn : TSSQN, AS' >
+     msg prepare(TID,version(K,V,TS,MD),CLIENT) from CLIENT to RID
+   =>
+     < RID : Replica | datastore : (VS version(K,V,TS,MD)),
+                       sqn : (SQN + 1),
+                       tsSqn : insert(TS,SQN + 1,TSSQN), AS' >
+     {msg prepare-reply(TID,true,RID) from RID to CLIENT} .  --- always "true" in RAMP
+  *********
+
+
+ crl [receive-prepare-rw] :
+     < RID : Replica | datastore : VS,
+                       sqn : SQN,
+                       tsSqn : TSSQN, AS' >
+     msg prepare(TID,version(K,V,TS,MD),TS',CLIENT) from CLIENT to RID
+   =>
+     if tstamp(VERSION) == eptTS or tstamp(VERSION) == TS'
+       then < RID : Replica | datastore : (VS version(K,V,TS,MD)),
+                              sqn : SQN',
+                              tsSqn : insert(TS,SQN',TSSQN), AS' >
+            {msg prepare-reply(TID,true,RID) from RID to CLIENT}
+       else < RID : Replica | datastore : VS,
+                              sqn : SQN,
+                              tsSqn : TSSQN, AS' >
+            {msg prepare-reply(TID,false,RID) from RID to CLIENT}
+     fi
+     if SQN' := SQN + 1 /\
+        VERSION := latestPrepared(K,VS) .
+
+
+  op tstamp : Version -> Timestamp .
+  eq tstamp(version(K,V,TS,MD)) = TS .
+  eq tstamp(eptVersion) = eptTS .
+
+  op latestPrepared : String Versions -> Version .
+  eq latestPrepared(K,(VS version(K,V,TS,MD))) = version(K,V,TS,MD) .
+ ceq latestPrepared(K,(VS version(K',V,TS,MD))) = latestPrepared(K,VS)
+     if K =/= K' .
+  eq latestPrepared(K,nil) = eptVersion .
+
+
+  --- as of now, upon receiving "false" vote, the txn is aborted immediately
+  --- we could instead store the received vote, and abort the txn 
+  --- either nondeterministically, or after receiving all votes (as Walter does)  
+  rl [receive-prepare-reply-false-executing] :
+     < CLIENT : Client | executing : < TID : Txn | AS >,
+                         aborted : TRANSES',
+                         voteSites : VSTS, AS' >
+     msg prepare-reply(TID,false,RID') from RID' to CLIENT
+   =>
+     < CLIENT : Client | executing : none,
+                         aborted : (TRANSES' < TID : Txn | AS >),
+                         voteSites : remove(TID,RID',VSTS), AS' > .
+
+  op remove : Oid Oid VoteSites -> VoteSites .
+  eq remove(TID,RID,(voteSites(TID,(RID ; RIDS)) ; VSTS)) =
+       voteSites(TID,RIDS) ; VSTS .
+  eq remove(TID,RID,VSTS) = VSTS [owise] .
+
+
+  rl [receive-prepare-reply-aborted] :
+     < CLIENT : Client | aborted : (TRANSES' < TID : Txn | AS >),
+                         voteSites : VSTS, AS' >
+     msg prepare-reply(TID,FLAG,RID') from RID' to CLIENT  --- no matter what FLAG is
+   =>
+     < CLIENT : Client | aborted : (TRANSES' < TID : Txn | AS >),
+                         voteSites : remove(TID,RID',VSTS), AS' > .
+
+
+ crl [receive-prepare-reply-true-executing] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | executing : < TID : Txn | operations : OPS,
+                                                   txnSqn : TXNSQN, AS >,
+                         voteSites : VSTS,
+                         commitSites : CMTS, AS' >
+     msg prepare-reply(TID,true,RID') from RID' to CLIENT
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     if VSTS'[TID] == empty  --- all votes received and all yes!
+       then < CLIENT : Client | executing : < TID : Txn | operations : OPS,
+                                                          txnSqn : TXNSQN, AS >,
+                                voteSites : VSTS',
+                                commitSites : (CMTS ; voteSites(TID,RIDS)), AS' >
+            genCommits(TID,TXNSQN,RIDS,CLIENT)
+       else < CLIENT : Client | executing : < TID : Txn | operations : OPS,
+                                                          txnSqn : TXNSQN, AS >,
+                                voteSites : VSTS',
+                                commitSites : CMTS, AS' >
+     fi
+     if VSTS' := remove(TID,RID',VSTS) /\
+        RIDS := prepareSites(OPS,REPLICA-TABLE) .  --- as of now, commitSites == prepareSites .
+
+
+  op genCommits : Oid Nat OidSet Oid -> Configuration .
+  eq genCommits(TID,SQN,(RID' ; RIDS),CLIENT) =
+       genCommits(TID,SQN,RIDS,CLIENT)
+       (msg commit(TID,ts(CLIENT,SQN),CLIENT) from CLIENT to RID') .
+  eq genCommits(TID,SQN,empty,CLIENT) = none .
+
+  op _[_] : VoteSites Oid -> OidSet .
+  eq (voteSites(TID,RIDS) ; VSTS)[TID] = RIDS . 
+
+  op _[_] : 1stGets Oid -> OidSet .
+  eq (1st(TID,RIDS) ; 1STGETS)[TID] = RIDS . 
+
+  op _[_] : 2ndGets Oid -> OidSet .
+  eq (2nd(TID,RIDS) ; 2NDGETS)[TID] = RIDS . 
+
+
+  rl [receive-commit] :
+     < RID : Replica | datastore : VS,
+                       latestCommit : LC,
+                       tsSqn : TSSQN, AS' >
+     msg commit(TID,TS,CLIENT) from CLIENT to RID
+   =>
+     < RID : Replica | datastore : VS,
+                       latestCommit : cmt(LC,VS,TSSQN,TS), 
+                       tsSqn : TSSQN, AS' >
+     {msg committed(TID,RID) from RID to CLIENT} .
+
+  op cmt : KeyTimestamps Versions TimestampSqn Timestamp -> KeyTimestamps .
+  op $cmt : KeyTimestamps KeySet TimestampSqn Timestamp -> KeyTimestamps .
+  eq cmt(LC,VS,TSSQN,TS) = $cmt(LC,keyFilter(VS,TS),TSSQN,TS) .
+  eq $cmt(LC,(K,KS),TSSQN,TS) = $cmt(insert(K,maxseq(LC,K,TS,TSSQN),LC),KS,TSSQN,TS) .
+  eq $cmt(LC,empty,TSSQN,TS) = LC .
+
+  op keyFilter : Versions Timestamp -> KeySet . 
+  eq keyFilter((version(K,V,TS,MD) VS),TS') = 
+      if TS' == TS
+        then (K, keyFilter(VS,TS'))
+        else keyFilter(VS,TS')
+      fi .
+  eq keyFilter(nil,TS') = empty . 
+
+  op maxseq : KeyTimestamps String Timestamp TimestampSqn -> Timestamp .
+  eq maxseq(LC,K,TS,TSSQN) = 
+       if $hasMapping(LC,K)
+         then if $hasMapping(TSSQN,LC[K])
+                then if TSSQN[TS] > TSSQN[LC[K]]
+                       then TS
+                       else LC[K]
+                     fi
+                else TS
+              fi
+         else TS
+       fi .
+
+
+ crl [receive-committed] :
+     < M : Monitor | count : N >
+     < CLIENT : Client | executing : < TID : Txn | AS >,
+                         committed : TRANSES',
+                         commitSites : CMTS, AS' >
+     msg committed(TID,RID') from RID' to CLIENT
+   =>
+     if CMTS'[TID] == empty  --- all "committed" received
+       then < M : Monitor | count : N + 1 >
+            < CLIENT : Client | executing : none,
+                                committed : (TRANSES' < TID : Txn | AS >),
+                                commitSites : CMTS', AS' >
+       else < M : Monitor | count : N > 
+            < CLIENT : Client | executing : < TID : Txn | AS >,
+                                committed : TRANSES',
+                                commitSites : CMTS', AS' >
+     fi
+     if CMTS' := remove(TID,RID',CMTS) .
+
+
+  rl [receive-get] :
+     < RID : Replica | datastore : VS,
+                       latestCommit : LC, AS' >
+     msg get(TID,K,TS,RID') from CLIENT to RID
+   =>
+     < RID : Replica | datastore : VS,
+                       latestCommit : LC, AS' >
+     {msg (if TS == eptTS then response1(TID,vmatch(K,VS,LC),RID) 
+         else response2(TID,vmatch(K,VS,TS),RID) fi)
+       from RID to CLIENT} .
+
+
+  op vmatch : String Versions KeyTimestamps -> Version .
+  op vmatch : String Versions Timestamp -> Version .
+  eq vmatch(K,(VS version(K,V,TS,MD) VS'),(K |-> TS,LC)) = version(K,V,TS,MD) .
+  eq vmatch(K,VS,LC) = version(K,"",ts(dftOid,0),empty) [owise] .  
+  --- ??? deal with "K not in LC", namely, the first txn has reads
+  eq vmatch(K,(VS version(K,V,TS,MD) VS'),TS) = version(K,V,TS,MD) .
+  eq vmatch(K,VS,TS) = version(K,"",ts(dftOid,0),empty) [owise] .  
+  --- this should never apply since the 2nd-round read will fetch the version which has been prepared
+
+  ---??? how to compare two Oids
+  ---??? as of now, we simply compare the SQNs
+  ---??? alternatively, we could do string comparison based on lexicographic order
+  ---??? In that case we need to first tranlate RID into string
+  op _less-than_ : Timestamp Timestamp -> Bool .
+  eq ts(RID,SQN) less-than ts(RID',SQN') =
+       if SQN < SQN'
+         then true
+         else false
+              ---(if SQN == SQN' and RID < RID'
+                then true
+                else false
+              fi)
+       fi .
+
+ crl [receive-response1] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | executing : < TID : Txn | latest : VL, readSet : RS, AS >,
+                         1stGetSites : 1STGETS,
+                         2ndGetSites : 2NDGETS, AS' >
+     msg response1(TID,version(K,V,TS,MD),RID') from RID' to CLIENT
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     if 1STGETS'[TID] == empty
+       then < CLIENT : Client | executing : < TID : Txn | latest : VL', readSet : RS', AS >,
+                                1stGetSites : 1STGETS',
+                                2ndGetSites : (2NDGETS ; 2nd(TID,RIDS)), AS' >
+            gen2ndGets(TID,VL',RS',CLIENT,REPLICA-TABLE)
+       else < CLIENT : Client | executing : < TID : Txn | latest : VL', readSet : RS', AS >,
+                                1stGetSites : 1STGETS',
+                                2ndGetSites : 2NDGETS, AS' >  
+     fi 
+     if RS' := (RS version(K,V,TS,MD)) /\
+        VL' := lat(VL,MD,TS) /\
+        1STGETS' := remove(TID,RID',1STGETS) /\
+        RIDS := 2ndSites(VL',RS',REPLICA-TABLE) . 
+
+  op gen2ndGets : Oid KeyTimestamps Versions Oid ReplicaTable -> Configuration .
+  eq gen2ndGets(TID,(K |-> TS',VL),(RS version(K,V,TS,MD) RS'),CLIENT,REPLICA-TABLE) = 
+       gen2ndGets(TID,(K |-> TS',VL),(RS RS'),CLIENT,REPLICA-TABLE)
+       if TS less-than TS'
+         then msg get(TID,K,TS',CLIENT) from CLIENT to l(REPLICA-TABLE[K])
+         else none
+       fi .
+  eq gen2ndGets(TID,VL,RS,CLIENT,REPLICA-TABLE) = none [owise] .  --- if K is not in VL
+  eq gen2ndGets(TID,VL,nil,CLIENT,REPLICA-TABLE) = none .
+
+  op lat : KeyTimestamps KeySet Timestamp -> KeyTimestamps .
+  eq lat(VL,(K,MD),TS) = lat(insert(K,maxts(VL,K,TS),VL),MD,TS) .
+  eq lat(VL,empty,TS) = VL .
+
+  op maxts : KeyTimestamps String Timestamp -> Timestamp .
+  eq maxts(LC,K,TS) = if $hasMapping(LC,K)
+                        then if LC[K] less-than TS
+                               then TS
+                               else LC[K]
+                             fi
+                        else TS
+                      fi .
+
+  op 2ndSites : KeyTimestamps Versions ReplicaTable -> OidSet .
+  eq 2ndSites((K |-> TS',VL),(RS version(K,V,TS,MD) RS'),REPLICA-TABLE) =
+       2ndSites((K |-> TS',VL),(RS RS'),REPLICA-TABLE) ;
+       (if TS less-than TS'
+          then l(REPLICA-TABLE[K])
+          else empty
+        fi) .
+  eq 2ndSites(VL,RS,REPLICA-TABLE) = empty [owise] .  --- if K is not in VL
+  eq 2ndSites(VL,nil,REPLICA-TABLE) = empty .
+
+  op remove : Oid Oid 1stGets -> 1stGets .
+  eq remove(TID,RID,(1st(TID,(RID ; RIDS)) ; 1STGETS)) =
+       1st(TID,RIDS) ; 1STGETS .
+  eq remove(TID,RID,1STGETS) = 1STGETS [owise] .
+
+  op remove : Oid Oid 2ndGets -> 2ndGets .
+  eq remove(TID,RID,(2nd(TID,(RID ; RIDS)) ; 2NDGETS)) =
+       2nd(TID,RIDS) ; 2NDGETS .
+  eq remove(TID,RID,2NDGETS) = 2NDGETS [owise] .
+
+
+  rl [receive-response2] :
+     < CLIENT : Client | executing : < TID : Txn | readSet : (RS version(K,V',TS',MD') RS'), AS >,
+                         2ndGetSites : 2NDGETS, AS' >
+     msg response2(TID,version(K,V,TS,MD),RID') from RID' to CLIENT
+   => 
+     < CLIENT : Client | executing : < TID : Txn | readSet : (RS version(K,V,TS,MD) RS'), AS >,
+                         2ndGetSites : remove(TID,RID',2NDGETS), AS' > .
+
+
+ ceq [commit-ro-txn] :
+     < M : Monitor | count : N >
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | executing : < TID : Txn | operations : OPS, 
+                                                   txnSqn : TXNSQN, 
+                                                   readSet : RS, AS >,
+                         committed : TRANSES',
+                         1stGetSites : 1STGETS,
+                         2ndGetSites : 2NDGETS,
+                         voteSites : VSTS,
+                         sqn : SQN,  AS' >
+   =
+    < TABLE : Table | table : REPLICA-TABLE >
+    if read-only(OPS)
+      then < M : Monitor | count : N + 1 >
+           < CLIENT : Client | executing : none,
+                               committed : (TRANSES' < TID : Txn | operations : OPS, 
+                                                                   txnSqn : TXNSQN, 
+                                                                   readSet : RS, AS >),
+                               1stGetSites : delete(TID,1STGETS),
+                               2ndGetSites : delete(TID,2NDGETS),
+                               voteSites : VSTS, 
+                               sqn : SQN, AS' >
+      else < M : Monitor | count : N >
+           < CLIENT : Client | executing : < TID : Txn | operations : OPS, 
+                                                         txnSqn : SQN', 
+                                                         readSet : RS, AS >,
+                               committed : TRANSES',
+                               1stGetSites : delete(TID,1STGETS),
+                               2ndGetSites : delete(TID,2NDGETS),
+                               voteSites : (VSTS ; voteSites(TID,RIDS)),  
+                               sqn : SQN', AS' >
+           genPuts(OPS,CLIENT,TID,SQN',RS,REPLICA-TABLE)  
+           *** for simplicity, we do not use "readSet" for values written
+    fi
+    if 1STGETS[TID] == empty /\
+       2NDGETS[TID] == empty /\
+       RIDS := prepareSites(OPS,REPLICA-TABLE) /\
+       SQN' := SQN + 1 .
+
+
+  op delete : Oid 1stGets -> 1stGets .
+  eq delete(TID,(1st(TID,RIDS) ; 1STGETS)) = 1STGETS .
+  eq delete(TID,1STGETS) = 1STGETS [owise] .
+
+  op delete : Oid 2ndGets -> 2ndGets .
+  eq delete(TID,(2nd(TID,RIDS) ; 2NDGETS)) = 2NDGETS .
+  eq delete(TID,2NDGETS) = 2NDGETS [owise] .
+
+  op read-only : OperationList -> Bool .
+  eq read-only((OPS write(K,V) OPS')) = false .
+  eq read-only(OPS) = true [owise] .
+
+  --- deal with rw-txns in ROLA
+  op genPuts : OperationList Oid Oid Nat Versions ReplicaTable -> Configuration .
+  op $genPuts : OperationList Oid Oid Nat Versions ReplicaTable OperationList -> Configuration .
+  eq genPuts(OPS,CLIENT,TID,SQN,RS,REPLICA-TABLE) = $genPuts(OPS,CLIENT,TID,SQN,RS,REPLICA-TABLE,OPS) .
+  eq $genPuts((write(K,V) OPS),CLIENT,TID,SQN,(RS version(K,V',TS,MD) RS'),REPLICA-TABLE,(OPS' write(K,V) OPS'')) =
+       $genPuts(OPS,CLIENT,TID,SQN,(RS version(K,V',TS,MD) RS'),REPLICA-TABLE,(OPS' write(K,V) OPS''))
+       (msg prepare(TID,version(K,V,ts(CLIENT,SQN),md(OPS' OPS'')),TS,CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq $genPuts((read(K) OPS),CLIENT,TID,SQN,RS,REPLICA-TABLE,OPS') = 
+       $genPuts(OPS,CLIENT,TID,SQN,RS,REPLICA-TABLE,OPS') . 
+  eq $genPuts(nil,CLIENT,TID,SQN,RS,REPLICA-TABLE,OPS') = none .  
+ 
+endm

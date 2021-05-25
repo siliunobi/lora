@@ -1,0 +1,5 @@
+1) Run server script
+2) Run load/postload from one client
+3) Run update client file code
+4) Run client script
+5) Run transactions

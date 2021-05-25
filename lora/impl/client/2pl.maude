@@ -1,0 +1,257 @@
+load shim-dynamic
+---load shim-dynamic-test
+
+mod RAMP-F is
+  inc CLIENT-REPLICA .
+  inc MESSAGE .
+  inc VALUES-NAT .
+  inc SHIM-DYNAMIC .
+  pr STRING .
+
+
+  vars CLIENT RID TID RID' TABLE M : Oid .
+  var RIDS : OidSet .
+  vars AS AS' : AttributeSet .
+  vars TXNS TXNS' : ObjList .
+---  var K : Key .
+  vars K K' V V' : String .
+  var X : LocalVar .
+  var REPLICA-TABLE : ReplicaTable .
+  vars OPS OPS' OPS'' : OperationList .
+---  vars V V' : Value .
+---  var WS : WriteSet .
+  vars VARS VARS' : LocalVars .
+  vars RS DS RS' WRITES WRITES' READS : Versions .
+  vars LC VL VL' : KeyTimestamps .
+  var VERSION : Version .
+  vars TS TS' : Timestamp .
+  vars MD MD' KS : KeySet .
+  var VS : Versions .
+  vars SQN SQN' TXNSQN : Int .
+  var EXPR : Expression .
+---  var RT : KeyReplicas .
+  vars 1STGETS 1STGETS' : 1stGets .
+  vars 2NDGETS 2NDGETS' : 2ndGets .
+  vars VSTS CMTS VSTS' CMTS' ABORTS ABORTS' : VoteSites .
+---  vars T T1 : Float .
+  var FLAG : Bool .
+---  vars RECORD RECORD' : Record .
+  vars N N' : Nat .
+  vars TRANSES TRANSES' : Configuration .
+  var FW : FromWhom .
+  var TXN : Object .
+  var STR : String .
+  var LOCKS : Locks .
+  vars VOTES VOTES' : Vote .
+  var LT : LockType .
+
+
+  rl [start-txn] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : < TID : Txn | operations : OPS, AS > ;; TXNS,
+                         executing : none,
+                         voteSites : VSTS, AS' >
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | txns : TXNS,
+                         executing : (< TID : Txn | operations : OPS, AS >),
+                         voteSites : (VSTS ; voteSites(TID,prepareSites(OPS,REPLICA-TABLE))), AS' >
+     genAcquires(OPS,CLIENT,TID,REPLICA-TABLE) .
+
+
+  op genAcquires : OperationList Oid Oid ReplicaTable -> Configuration .
+  eq genAcquires((read(K) OPS),CLIENT,TID,REPLICA-TABLE) = 
+       genAcquires(OPS,CLIENT,TID,REPLICA-TABLE)
+       (msg acquire(TID,K,sl,CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq genAcquires((write(K,V) OPS),CLIENT,TID,REPLICA-TABLE) =
+       genAcquires(OPS,CLIENT,TID,REPLICA-TABLE) 
+       (msg acquire(TID,K,el,CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq genAcquires(nil,CLIENT,TID,REPLICA-TABLE) = none .
+
+
+  op prepareSites : OperationList ReplicaTable -> OidSet [memo] .
+  eq prepareSites((write(K,V) OPS),REPLICA-TABLE) =
+       l(REPLICA-TABLE[K]) ; prepareSites(OPS,REPLICA-TABLE) .
+  eq prepareSites((read(K) OPS),REPLICA-TABLE) =
+       l(REPLICA-TABLE[K]) ; prepareSites(OPS,REPLICA-TABLE) .
+  eq prepareSites(nil,REPLICA-TABLE) = empty .
+
+
+
+  rl [receive-prepare] :
+     < RID : Replica | locks : LOCKS, AS' >
+     msg acquire(TID,K,LT,CLIENT) from CLIENT to RID
+   =>
+     if compatible(K,LT,LOCKS)
+       then < RID : Replica | locks : (LOCKS,lock(TID,K,LT)), AS' >
+            {msg prepare-reply(TID,true,RID) from RID to CLIENT}
+       else < RID : Replica | locks : LOCKS, AS' >
+            {msg prepare-reply(TID,false,RID) from RID to CLIENT}
+     fi .
+
+  op compatible : String LockType Locks -> Bool .
+  eq compatible(K,el,(LOCKS,lock(TID,K,LT))) = false .
+  eq compatible(K,sl,(LOCKS,lock(TID,K,el))) = false .
+  eq compatible(K,LT,LOCKS) = true [owise] .
+
+
+ crl [receive-prepare-reply] :
+     < TABLE : Table | table : REPLICA-TABLE >
+     < CLIENT : Client | executing : < TID : Txn | operations : OPS, AS >,
+                         voteSites : VSTS,
+                         commitSites : CMTS,
+                         votes : VOTES,
+                         abortSites : ABORTS, AS' >
+     msg prepare-reply(TID,FLAG,RID') from RID' to CLIENT
+   =>
+     < TABLE : Table | table : REPLICA-TABLE >
+     if VSTS'[TID] == empty  --- all votes received
+       then if allYes(TID,VOTES')
+              then < CLIENT : Client | executing : < TID : Txn | operations : OPS, AS >,
+                                       voteSites : VSTS',
+                                       commitSites : (CMTS ; voteSites(TID,RIDS)),
+                                       votes : VOTES',
+                                       abortSites : ABORTS, AS' >
+                   genOps(OPS,CLIENT,TID,REPLICA-TABLE)
+              else < CLIENT : Client | executing : < TID : Txn | operations : OPS, AS >,
+                                       voteSites : VSTS',
+                                       commitSites : CMTS,
+                                       votes : VOTES',
+                                       abortSites : (ABORTS ; voteSites(TID,RIDS)), AS' >
+                   genAborts(CLIENT,TID,RIDS)
+            fi
+       else < CLIENT : Client | executing : < TID : Txn | operations : OPS, AS >,
+                                voteSites : VSTS',
+                                commitSites : CMTS,
+                                votes : VOTES',
+                                abortSites : ABORTS, AS' >
+     fi 
+   if VSTS' := remove(TID,RID',VSTS) /\
+      RIDS := prepareSites(OPS,REPLICA-TABLE) /\
+      VOTES' := (VOTES ; vote(TID,RID',FLAG)) .  
+  --- as of now, commitSites == abortSites == prepareSites
+
+
+  op _[_] : VoteSites Oid -> OidSet .
+  eq (voteSites(TID,RIDS) ; VSTS)[TID] = RIDS . 
+
+  op remove : Oid Oid VoteSites -> VoteSites .
+  eq remove(TID,RID,(voteSites(TID,(RID ; RIDS)) ; VSTS)) =
+       voteSites(TID,RIDS) ; VSTS .
+  eq remove(TID,RID,VSTS) = VSTS [owise] .
+
+  op allYes : Oid Vote -> Bool .
+  eq allYes(TID,(vote(TID,RID',false) ; VOTES)) = false .
+  eq allYes(TID,VOTES) = true [owise] .
+
+  op genOps : OperationList Oid Oid ReplicaTable -> Configuration .
+  eq genOps((read(K) OPS),CLIENT,TID,REPLICA-TABLE) = 
+       genOps(OPS,CLIENT,TID,REPLICA-TABLE)
+       (msg get(TID,K,CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq genOps((write(K,V) OPS),CLIENT,TID,REPLICA-TABLE) =
+       genOps(OPS,CLIENT,TID,REPLICA-TABLE) 
+       (msg put(TID,version(K,V),CLIENT) from CLIENT to l(REPLICA-TABLE[K])) .
+  eq genOps(nil,CLIENT,TID,REPLICA-TABLE) = none . 
+
+
+  op genAborts : Oid Oid OidSet -> Configuration .
+  eq genAborts(CLIENT,TID,(RID ; RIDS)) =
+       genAborts(CLIENT,TID,RIDS)
+       (msg abort(TID,CLIENT) from CLIENT to RID) .
+  eq genAborts(CLIENT,TID,empty) = none .
+
+
+  rl [receive-put] :
+     < RID : Replica | datastore : VS, locks : LOCKS, AS' >
+     msg put(TID,version(K,V),CLIENT) from CLIENT to RID
+   =>
+     < RID : Replica | datastore : (VS version(K,V)), 
+                       locks : release(TID,LOCKS), AS' >
+     {msg committed(TID,RID) from RID to CLIENT} .
+
+
+  rl [receive-get] :
+     < RID : Replica | datastore : VS, locks : LOCKS, AS' >
+     msg get(TID,K,CLIENT) from CLIENT to RID
+   =>
+     < RID : Replica | datastore : VS,
+                       locks : release(TID,LOCKS), AS' >
+     {msg committed(TID,latest(K,VS),RID) from RID to CLIENT} .
+
+  op latest : String Versions -> String .
+  eq latest(K,(VS version(K,V))) = V .
+ ceq latest(K,(VS version(K',V))) = latest(K,VS) if K =/= K' .
+  eq latest(K,nil) = "" .
+
+
+  rl [receive-abort] :
+     < RID : Replica | locks : LOCKS, AS' >
+     msg abort(TID,CLIENT) from CLIENT to RID
+   =>
+     < RID : Replica | locks : release(TID,LOCKS), AS' >
+     {msg aborted(TID,RID) from RID to CLIENT} .
+
+
+  op release : Oid Locks -> Locks .
+  eq release(TID,(lock(TID,K,LT),LOCKS)) =
+       release(TID,LOCKS) .
+  eq release(TID,LOCKS) = LOCKS [owise] .
+
+
+ crl [receive-aborted] :
+     < CLIENT : Client | executing : < TID : Txn | AS >,  
+                         aborted : TRANSES',                     
+                         abortSites : ABORTS, AS' >
+     msg aborted(TID,RID') from RID' to CLIENT
+   =>
+     if ABORTS'[TID] == empty  --- all aborts received
+       then < CLIENT : Client | executing : none,
+                                aborted : (TRANSES' < TID : Txn | AS >),  
+                                abortSites : ABORTS', AS' >
+       else < CLIENT : Client | executing : < TID : Txn | AS >,
+                                aborted : TRANSES',                     
+                                abortSites : ABORTS', AS' >            
+     fi
+     if ABORTS' := remove(TID,RID',ABORTS) .  
+
+
+ ceq [receive-committed-write] :
+     < M : Monitor | count : N >
+     < CLIENT : Client | executing : < TID : Txn | AS >,
+                         committed : TRANSES',
+                         commitSites : CMTS, AS' >
+     msg committed(TID,RID') from RID' to CLIENT
+   =
+     if CMTS'[TID] == empty  --- all "committed" received
+       then < M : Monitor | count : N + 1 >
+            < CLIENT : Client | executing : none,
+                                committed : (TRANSES' < TID : Txn | AS >),
+                                commitSites : CMTS', AS' >
+       else < M : Monitor | count : N > 
+            < CLIENT : Client | executing : < TID : Txn | AS >,
+                                committed : TRANSES',
+                                commitSites : CMTS', AS' >
+     fi
+     if CMTS' := remove(TID,RID',CMTS) .
+
+
+ ceq [receive-committed-read] :
+     < M : Monitor | count : N >
+     < CLIENT : Client | executing : < TID : Txn | AS >,
+                         committed : TRANSES',
+                         commitSites : CMTS, AS' >
+     msg committed(TID,V,RID') from RID' to CLIENT
+   =
+     if CMTS'[TID] == empty  --- all "committed" received
+       then < M : Monitor | count : N + 1 >
+            < CLIENT : Client | executing : none,
+                                committed : (TRANSES' < TID : Txn | AS >),
+                                commitSites : CMTS', AS' >
+       else < M : Monitor | count : N > 
+            < CLIENT : Client | executing : < TID : Txn | AS >,
+                                committed : TRANSES',
+                                commitSites : CMTS', AS' >
+     fi
+     if CMTS' := remove(TID,RID',CMTS) .
+
+endm

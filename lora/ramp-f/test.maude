@@ -1,0 +1,110 @@
+set show advisories off .
+
+load initial-states
+
+mod RAMP-SNOW-ANALYSIS is
+  including INITIAL-STATES .
+  including APMAUDE .
+  including MODEL-CHECKER .
+
+  subsort Config < State .
+
+  eq LIMIT = 1.0e+100 .
+
+  op initConfig : -> Config .
+  eq initConfig = run(initState,LIMIT) .
+
+  ops x y z : -> Key .
+  ops tb r1 r2 r3 t1 t2 t3 t4 : -> Address .
+  ops xl yl zl : -> LocalVar .
+
+  --- init(RTX,WTX,RWTX,REPLS,KEYS,ROPS,WOPS,RWOPS,KAD) 
+   eq initState = init(4,4,0,4,5,2,2,0,uniform) .
+
+
+  ---(
+  eq initState = { 0.0 | nil} < tb : Table | table: [replicatingSites(x, 2) ;; replicatingSites(y, 2)] > 
+                 { 0.0, 1 <- start } { 0.0, 2 <- start }
+     < 1 : Replica | gotTxns: ( < 1 . 1 : Txn | operations: ((xl :=read x) (yl :=read y)), readSet: empty, 
+                                             latest: empty, localVars: (xl |-> [0], yl |-> [0]) >  ), 
+                      datastore: empty, sqn: 1, latestCommit: empty, 
+                      executing: noActor, 
+                      committed: emptyTxnList,
+                      voteSites: noVS, 
+                       1stGetSites: no1st,
+                       2ndGetSites: no2nd, commitSites: noVS > 
+
+     < 2 : Replica | gotTxns: ( < 2 . 1 : Txn | operations: ((xl :=read x) write(x,1) (yl :=read y) write(y,1)), readSet: empty, 
+                                             latest: empty, localVars: (xl |-> [0], yl |-> [0]) >), 
+                      datastore: (version(x,[0],eptTS,empty), version(y,[0],eptTS,empty)), sqn: 1, latestCommit: empty, 
+                      executing: noActor, 
+                      committed: emptyTxnList,
+                      voteSites: noVS, 
+                       1stGetSites: no1st,
+                       2ndGetSites: no2nd, commitSites: noVS > .
+  )
+
+  --- Metrics
+  vars T T' T1 T2 NUMBER : Float .
+  var C : Config .
+  vars M TID : Address .
+  vars RECORD RECORD' : Record . 
+  vars READS WRITES : Versions .
+  var FLAG : Bool .
+
+  --- Throughput
+  op totalRunTime : Record -> Float .
+  op trt : Record Float -> Float .
+  eq totalRunTime(RECORD) = trt(RECORD,0.0) .
+  eq trt((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD),T) = 
+       if T2 > T
+         then trt(RECORD,T2)
+         else trt(RECORD,T)
+       fi .
+  eq trt(noRecord,T) = T .
+         
+  op throughput : Config -> Float .
+  eq throughput(< M : Monitor | log: RECORD > C) = committedNumber(RECORD) / totalRunTime(RECORD) .
+
+  op committedNumber : Record -> Float .
+  op $committedNumber : Record Float -> Float .
+  eq committedNumber(RECORD) = $committedNumber(RECORD,0.0) .
+  eq $committedNumber((record(TID,T1,T2,READS,WRITES,true) ; RECORD),NUMBER) = 
+       $committedNumber(RECORD,NUMBER + 1.0) .
+  eq $committedNumber((record(TID,T1,T2,READS,WRITES,false) ; RECORD),NUMBER) = 
+       $committedNumber(RECORD,NUMBER) .
+  eq $committedNumber(noRecord,NUMBER) = NUMBER .
+
+  --- Commit Rate
+  op commitRate : Config -> Float .
+  eq commitRate(< M : Monitor | log: RECORD > C) = committedNumber(RECORD) / totalNumber(RECORD) .
+
+  op totalNumber : Record -> Float .
+  op $totalNumber : Record Float -> Float .
+  eq totalNumber(RECORD) = $totalNumber(RECORD,0.0) .
+  eq $totalNumber((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD),NUMBER) = 
+       $totalNumber(RECORD,NUMBER + 1.0) .
+  eq $totalNumber(noRecord,NUMBER) = NUMBER .  
+
+  --- Avg Latency
+  op avgLatency : Config -> Float .
+  eq avgLatency(< M : Monitor | log: RECORD > C) = totalLatency(RECORD) / committedNumber(RECORD) .
+  
+  op totalLatency : Record -> Float .
+  op $totalLatency : Record Float -> Float .
+  eq totalLatency(RECORD) = $totalLatency(RECORD,0.0) .
+  eq $totalLatency((record(TID,T1,T2,READS,WRITES,true) ; RECORD),NUMBER) =
+       $totalLatency(RECORD,NUMBER + T2 - T1) .
+  eq $totalLatency((record(TID,T1,T2,READS,WRITES,false) ; RECORD),NUMBER) = 
+       $totalLatency(RECORD,NUMBER) .
+  eq $totalLatency(noRecord,NUMBER) = NUMBER .
+
+  --- PVESTA interfaces
+  eq val(0,C) = throughput(C) .
+  eq val(1,C) = avgLatency(C) .
+  eq val(2,C) = commitRate(C) .
+        
+endm
+
+---set clear rules off .
+---rewrite initConfig .

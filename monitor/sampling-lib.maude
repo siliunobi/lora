@@ -1,0 +1,32 @@
+load distr-lib
+
+(mod SAMPLING-LIB is
+  pr RANDOM + COUNTER + CONVERSION .
+  inc DISTR-LIB .
+  
+  *** predefined
+  op rand : -> [Float] .
+  rl [rnd] : rand => float(random(counter) / 4294967296) .
+  
+  *** unified operator for defining sampling functions  
+  op sample : RFun -> RFun .
+
+  vars RATE MEAN SD RAND : Float .
+
+  *** sampling function for the exponential distribution
+  eq sample(exponential(RATE))[RAND] = (- log(RAND)) / RATE .  
+
+  *** sampling function for the lognormal distribution
+  eq sample(lognormal(MEAN,SD))[RAND] 
+   = exp(MEAN + SD * sqrt(- 2.0 * log(RAND)) * cos(2.0 * pi * RAND)) .  
+   
+  *** sampling functions for the other distributions
+endm)
+
+
+
+
+
+
+
+

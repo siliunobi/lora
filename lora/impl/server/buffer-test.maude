@@ -1,0 +1,39 @@
+load socket
+
+------------------------------------------------------------------------------------
+---- BUFFERED-SOCKET --- 
+------------------------------------------------------------------------------------
+
+mod BUFFERED-SOCKET is
+  pr NAT .
+  inc SOCKET .
+
+------------------------------------------------------------------------------------
+----  class BufferedSocket |      *** One on each extreme of the socket
+----     read : String,           *** Messages read
+----     bState : BState .        *** Either idle or active
+----     waiting : Bool .         *** Waiting for Sent
+----     complete : FindResult    *** Index of #
+
+  sort BufferedSocket .
+  subsort BufferedSocket < Cid .
+  op BufferedSocket : -> BufferedSocket .
+
+  op read :_ : String -> Attribute [ctor gather(&)] .
+  op bState :_ : BState -> Attribute [ctor gather(&)] .
+  op waiting :_ : Bool -> Attribute [ctor gather(&)] .
+  op complete :_ : FindResult -> Attribute [ctor gather(&)] .
+
+------------------------------------------------------------------------------------
+
+  op b : Oid -> Oid .   *** buffered sockets ids are marked with a b operator,
+                        *** i.e., the buffers associated to a socket SOCKET
+                        *** have identifier b(SOCKET); note that there is a
+                        *** BufferedSocket on each side of the socket, that is,
+                        *** there are two objects with the same id, but in different
+                        *** configurations.
+
+  sort BState .
+  ops idle active : -> BState [ctor] .
+
+endm

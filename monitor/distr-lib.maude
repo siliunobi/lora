@@ -1,0 +1,27 @@
+(fmod DISTR-LIB is
+  pr FLOAT + QID .
+  
+  sort RFun .  *** real function sort
+
+  *** predefined probability distributions  
+  op uniform : Float Float -> RFun .    *** min, max
+  op exponential : Float -> RFun .     *** rate: lambda
+  op normal : Float Float -> RFun .     *** mean: mu, and sd: sigma
+  op lognormal : Float Float -> RFun .  *** mean: mu, sd: sigma
+  op weibull : Float Float -> RFun .    *** shape: k, scale: lambda
+  op zipfian : Float Float -> RFun .    *** skew: s, cardinality: n
+  
+  sorts Tuple Tuples .    subsort Tuple < Tuples .  *** interface for Pi
+
+  op `[_`,_`,_`] : Qid RFun RFun -> Tuple [ctor] .
+  op `[_`,_`] : Qid RFun -> Tuple [ctor] .
+
+  op empty : -> Tuples [ctor] .
+  op _;;_ : Tuples Tuples -> Tuples [ctor comm assoc id: empty] .
+  
+  op tpls : -> Tuples .
+  
+  op _`[_`] : RFun Float -> Float [ctor] .  *** real function application
+endfm)
+
+

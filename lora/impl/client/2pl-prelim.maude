@@ -1,0 +1,400 @@
+mod LOC is
+  pr CONFIGURATION .
+  pr STRING .
+
+  op l : String Nat -> Oid .  *** l(IP,local object ID)
+                              *** l(IP,0) is always the shim's ID 
+  op l : String -> Oid .      *** for YCSB client
+
+  var S : String .
+  var N : Nat .
+  op ip : Oid -> String .
+  eq ip(l(S,N)) = S .
+  eq ip(l(S)) = S .
+
+  op id : Oid -> Nat .
+  eq id(l(S,N)) = N .
+  eq id(l(S)) = 0 .  --- Assume there is no l(S,0) for client/server obj
+
+endm
+view Oid from TRIV to LOC is sort Elt to Oid . endv
+
+fmod SOME-PARAMETERS is
+  sort Version .  --- In RAMP version is a 4-tuple (key,value,timestamp,metadata)
+endfm
+
+mod TXN-SORTS is  
+  inc SOME-PARAMETERS .
+  pr CONFIGURATION .
+  pr NAT .
+  pr INT .
+  pr STRING .
+
+  sorts Key Value Operation LocalVar Expression ObjList OidList OidSet
+        KeyVersion KeyValueVersion ValueVersion Vote Timestamp
+        Record FromWhom .
+  subsort Object < ObjList .
+  subsort LocalVar < Expression .
+  subsort Nat < Expression .
+  subsort Oid < OidList .
+  subsort Oid < OidSet .
+
+  --- RID, SQN
+  --- ??? initial value: ts(0,0) or eptTS???
+  op ts : Oid Int -> Timestamp [ctor] .  --- v_latest default value is -1  
+  op eptTS : -> Timestamp [ctor] .
+
+  op noVote : -> Vote [ctor] .
+  op vote : Oid Oid Bool -> Vote [ctor] .  --- TID,RID,yes/no
+  op _;_ : Vote Vote -> Vote [ctor assoc comm id: noVote] .  
+
+  op noOne : -> FromWhom [ctor] .
+  op fromWhom : Oid Oid -> FromWhom [ctor] .
+  op _;_ : FromWhom FromWhom -> FromWhom [ctor assoc comm id: noOne] .
+
+---2pl
+  sorts Lock LockType .
+  op lock : Oid String LockType -> Lock .
+  ops sl el : -> LockType .
+
+endm
+view Operation from TRIV to TXN-SORTS is sort Elt to Operation . endv
+view Version from TRIV to TXN-SORTS is sort Elt to Version . endv
+view Key from TRIV to TXN-SORTS is sort Elt to Key . endv
+view LocalVar from TRIV to TXN-SORTS is sort Elt to LocalVar . endv
+view Value from TRIV to TXN-SORTS is sort Elt to Value . endv
+view KeyVersion from TRIV to TXN-SORTS is sort Elt to KeyVersion . endv
+view KeyValueVersion from TRIV to TXN-SORTS is sort Elt to KeyValueVersion . endv
+view ValueVersion from TRIV to TXN-SORTS is sort Elt to ValueVersion . endv
+view Vote from TRIV to TXN-SORTS is sort Elt to Vote . endv
+view Timestamp from TRIV to TXN-SORTS is sort Elt to Timestamp . endv
+view Lock from TRIV to TXN-SORTS is sort Elt to Lock . endv
+
+
+mod TXN-AUX1 is
+  pr STRING .
+  pr LIST{Operation} * (sort List{Operation} to OperationList) .
+  pr MAP{LocalVar,Value} * (sort Map{LocalVar,Value} to LocalVars) .
+---  pr MAP{Key,Value} * (sort Map{Key,Value} to WriteSet, op undefined to undefinedWriteSet) .  --- no need for RAMP
+---  pr SET{Oid} * (sort Set{Oid} to OidSet) . 
+---  pr LIST{Oid} * (sort List{Oid} to OidList) .
+  pr LIST{ValueVersion} * (sort List{ValueVersion} to ValueVersionList) .  --- no need for RAMP
+  pr SET{String} * (sort Set{String} to KeySet) .
+  pr MAP{String,Timestamp} * (sort Map{String,Timestamp} to KeyTimestamps) .
+  pr LIST{Key} * (sort List{Key} to KeyList) .
+*** for RAMP-S
+  pr SET{Timestamp} * (sort Set{Timestamp} to Timestamps) .
+  pr SET{Lock} * (sort Set{Lock} to Locks) .
+
+  op write : Key Expression -> Operation [ctor] .
+  op write : String String -> Operation [ctor] .  
+
+  op _:=read_ : LocalVar Key -> Operation [ctor] .
+  op waitRemote : Key LocalVar -> Operation [ctor] .  --- "internal" state, no need for RAMP
+  op read : String -> Operation [ctor] .
+
+
+  op _plus_ : Expression Expression -> Expression [ctor] .
+  op eval : Expression LocalVars -> Value .
+
+  op emptyTxnList : -> ObjList [ctor] .
+  op _;;_ : ObjList ObjList -> ObjList [ctor assoc id: emptyTxnList] .
+  
+  op emptyOidList : -> OidList [ctor] .
+  op _;;_ : OidList OidList -> OidList [ctor assoc id: emptyOidList] .
+
+  op empty : -> OidSet [ctor] .
+  op _;_ : OidSet OidSet -> OidSet [ctor assoc comm id: empty] .
+
+  var A : Oid .
+  var AS : OidSet .  
+
+  op delete : Oid OidSet -> OidSet .
+  op delete1 : Oid OidSet -> OidSet .
+  eq delete(A, A ; AS) = delete(A, AS) .
+  eq delete(A, AS) = AS [owise] .
+  eq delete1(A, A ; AS) = AS .
+  eq delete1(A, AS) = AS [owise] .
+
+endm
+view OidSet from TRIV to TXN-AUX1 is sort Elt to OidSet . endv
+view ValueVersionList from TRIV to TXN-AUX1 is sort Elt to ValueVersionList . endv
+view OidList from TRIV to TXN-AUX1 is sort Elt to OidList . endv
+
+
+mod TXN-AUX2 is
+  including TXN-AUX1 .
+
+  sort VoteSites .  
+  op noVS : -> VoteSites [ctor] .
+  op voteSites : Oid OidSet -> VoteSites [ctor] .  --- TID, Set{RID}
+  op _;_ : VoteSites VoteSites -> VoteSites [ctor assoc comm id: noVS] .
+
+  sort 1stGets .
+  op no1st : -> 1stGets [ctor] .
+  op 1st : Oid OidSet -> 1stGets [ctor] .
+  op _;_ : 1stGets 1stGets -> 1stGets [ctor assoc comm id: no1st] .
+
+  sort 2ndGets .
+  op no2nd : -> 2ndGets [ctor] .
+  op 2nd : Oid OidSet -> 2ndGets [ctor] .
+  op _;_ : 2ndGets 2ndGets -> 2ndGets [ctor assoc comm id: no2nd] .
+
+endm
+
+mod VALUES-NAT is --- define the sort Value
+  inc TXN-AUX1 .
+
+  op `[_`] : Nat -> Value [ctor] .     --- to avoid problems with preregularity
+  var X : LocalVar .  var VARS : LocalVars .  var N : Nat . vars EXPR1 EXPR2 : Expression .
+  op evalAux : Expression LocalVars -> Nat .
+  eq eval(EXPR1, VARS) = [evalAux(EXPR1, VARS)] .
+  eq evalAux(X, ((X |-> [N]), VARS)) = N .
+  eq evalAux(N, VARS) = N .
+  eq evalAux(EXPR1 plus EXPR2, VARS) = evalAux(EXPR1, VARS) + evalAux(EXPR2, VARS) .
+endm
+
+---(
+mod VERSION-RAMP is
+  inc SOME-PARAMETERS + TXN-SORTS + TXN-AUX1 .
+  op version : String String Timestamp KeySet -> Version .  --- KeySet concerns MD
+  op eptVersion : -> Version .
+endm
+)
+
+fmod READSET-RAMP is
+  --- RAMP's readSet is Versions
+endfm
+
+mod DATASTORE-RAMP is
+  pr LIST{Version} * (sort List{Version} to Versions) .
+endm
+
+mod MESSAGE is
+  inc TXN-AUX1 .
+
+  pr CONFIGURATION .
+  pr NAT .
+  pr STRING .
+  pr LOC .
+  pr INT .
+
+  sort MsgCont .
+
+  op error : String -> Msg [ctor msg] .
+
+  op test : Nat -> MsgCont .
+
+  op start_ : Oid -> Msg [ctor] .
+
+  op msgg : -> Msg .
+  op msg_from_ : MsgCont Oid -> Msg [ctor] .
+  op msg_from_to_ : MsgCont Oid Oid -> Msg [ctor] .
+  op msg_from_to_ : String Oid Oid -> Msg [ctor] .
+
+  op to_from_msg_ : Oid Oid MsgCont -> Msg [ctor msg] .
+
+  op msg_from_to_and_ : String Oid Oid Oid -> Msg [ctor] .
+  op msg_from_to_and_ : MsgCont Oid Oid Oid -> Msg [ctor] .
+
+  op new-socket : Oid -> Msg [ctor] .
+
+  op o1 : -> Oid .
+  op o2 : -> Oid .
+
+  vars O O' : Oid .
+  var MSG : MsgCont .
+  var STR : String .
+
+  op source : Msg -> Oid .
+  op target : Msg -> Oid .
+  eq source(msg MSG from O to O') = O .
+  eq target(msg MSG from O to O') = O' .
+  eq source(msg STR from O to O') = O .
+  eq target(msg STR from O to O') = O' .
+
+  ---
+  op dftOid : -> Oid .
+
+  op tid : Oid Nat -> Oid .  --- txn ID
+
+
+  op ts : Oid Int -> Timestamp [ctor] .
+  op version : String String Timestamp KeySet -> Version .  --- KeySet concerns MD
+  op eptVersion : -> Version .
+ 
+  
+  op prepare-reply : Oid Bool Oid -> MsgCont . --- TID, yes/no, RID
+  op get : Oid Key Timestamp Oid -> MsgCont .
+  op get : Oid String Timestamp Oid -> MsgCont .
+--- for RAMP-S
+  op get : Oid String Timestamps Oid -> MsgCont .  
+  op prepare : Oid Version Oid -> MsgCont .
+  op commit : Oid Timestamp Oid -> MsgCont .
+  op committed : Oid Oid -> MsgCont .
+  op response1 : Oid Version Oid -> MsgCont .
+  op response2 : Oid Version Oid -> MsgCont .
+  op start : -> MsgCont .
+  op commit-reads : -> MsgCont .
+
+  op executeTxn : Object -> MsgCont .
+  op done : Oid -> MsgCont .
+
+---2pl
+  op version : String String -> Version .  
+
+  op get : Oid String Oid -> MsgCont .  
+  op put : Oid Version Oid -> MsgCont .
+  op acquire : Oid String LockType Oid -> MsgCont . 
+  op abort : Oid Oid -> MsgCont .
+  op aborted : Oid Oid -> MsgCont .
+  op committed : Oid String Oid -> MsgCont .  --- returned value for a read
+endm
+
+
+mod CLIENT-REPLICA is
+  including TXN-SORTS .
+  including TXN-AUX2 .
+  including READSET-RAMP .
+  including DATASTORE-RAMP .
+---  pr MAP{Nat,Oid} .
+  pr MAP{String,String} * (sort Map{String,String} to ReplicaTable) .
+
+  **************
+  *** Client ***
+
+  sort Client .
+  subsort Client < Cid .
+  op Client : -> Client .
+
+  op txns :_ : ObjList -> Attribute [ctor gather(&)] .
+  op pendingTxn :_ : OidSet -> Attribute [ctor gather(&)] .
+
+  **************
+  *** Server ***
+
+  sort Replica .  *** l("localhost",N)
+  subsort Replica < Cid .
+  op Replica : -> Replica .
+
+  op datastore :_ : Versions -> Attribute [ctor gather(&)] .  
+  *** initialized on some distributions; version(K,[0],ts(0,0),empty)
+
+  op sqn :_ : Nat -> Attribute [ctor gather(&)] .  *** initialized as 0
+  op executing :_ : Configuration -> Attribute [ctor gather(&)] .  *** initialized as emptyTxnList
+---  op submitted :_ : Configuration -> Attribute [ctor gather(&)] .  ---??? NEW for RAMP
+  op committed :_ : Configuration -> Attribute [ctor gather(&)] .  *** init: emptyTxnList
+
+
+  op gotTxns :_ : ObjList -> Attribute [ctor gather(&)] .  *** storing txns from clients
+---  op votes :_ : Vote -> Attribute [ctor gather(&)] .  --- no need for RAMP
+  op voteSites :_ : VoteSites -> Attribute [ctor gather(&)] .  *** init: noVS
+  op latestCommit :_ : KeyTimestamps -> Attribute [ctor gather(&)] .  
+  ***??? init: empty; different from original RAMP spec
+
+  op 1stGetSites :_ : 1stGets -> Attribute [ctor gather(&)] .  *** init: no1st
+  op 2ndGetSites :_ : 2ndGets -> Attribute [ctor gather(&)] .  *** init: no2nd
+  op commitSites :_ : VoteSites -> Attribute [ctor gather(&)] .  *** init: noVS
+
+  ---??? bound the number of threads 
+  op threads :_ : Nat -> Attribute [ctor gather(&)] .
+  ---???
+  op fromWhom :_ : FromWhom -> Attribute [ctor gather(&)] .
+
+---2pl
+  op locks :_ : Locks -> Attribute [ctor gather(&)] .  --- server
+  op votes :_ : Vote -> Attribute [ctor gather(&)] .  --- client
+  op abortSites :_ : VoteSites -> Attribute [ctor gather(&)] .  --- client
+  op aborted :_ : Configuration -> Attribute [ctor gather(&)] .  --- client
+
+  ***********
+  *** Txn ***
+
+  sort Txn .  *** regular Oid like O
+  subsort Txn < Cid .
+  op Txn : -> Txn .
+
+
+  op operations :_ : OperationList -> Attribute [ctor gather(&)] .  *** initialized on some distributions
+  op destination :_ : Oid -> Attribute [ctor gather(&)] .  
+  op readSet :_ : Versions -> Attribute [ctor gather(&)] .  *** init: empty
+---  op writeSet :_ : WriteSet -> Attribute [ctor gather(&)] .  *** no need for RAMP
+  op localVars :_ : LocalVars -> Attribute [ctor gather(&)] .  *** init depending on keys the initialized ops concern
+  op txnSqn :_ : Nat -> Attribute [ctor gather(&)] .
+  op latest :_ : KeyTimestamps -> Attribute [ctor gather(&)] .  *** initialized as empty
+
+
+  *************
+  *** Table ***
+  sort Table .
+  subsort Table < Cid .
+  op Table : -> Table .
+  op table :_ : ReplicaTable -> Attribute [ctor gather(&)] .
+
+
+  ---??? Perhaps we need another attr: 
+  ---??? map{Nat,Oid} of servers; sampleUniWithInt() looks up index for servers
+  --- op servers :_ : Map{Nat,Oid} -> Attribute [ctor gather(&)] .
+
+  sort Monitor .
+  subsort Monitor < Cid .
+  op Monitor : -> Monitor .
+  op count :_ : Nat -> Attribute [ctor gather(&)] . 
+
+---(
+  op Monitor : -> ActorType .
+  op log :_ : Record -> Attribute .
+
+  op noRecord : -> Record [ctor] .
+  --- TID, issueTime, finishTime, values read, values written, committed?
+  --- finishTime in ROLA is the time when a txn commits or aborts
+  op record : Oid Float Float Versions Versions Bool -> Record [ctor] .
+  op _;_ : Record Record -> Record [ctor assoc id: noRecord] .
+)
+endm
+
+mod MSG-STRING-CONVERSION is
+  pr MESSAGE .
+  pr STRING .
+  pr META-LEVEL .
+  pr CONFIGURATION .
+
+  vars S S' S'' : String .
+  var  MSG : Msg .
+  var N : Nat .
+  var  Q : Qid .
+  vars QIL QIL' : QidList .
+
+
+  op qidListString : QidList -> String .
+  op qidListString : QidList String -> String .
+  op stringQidList : String -> QidList .
+  op stringQidList : String QidList -> QidList .
+
+  eq qidListString(QIL) = qidListString(QIL, "") .
+  eq qidListString(nil, S) = S .
+  eq qidListString(Q QIL, S) = qidListString(QIL, S + string(Q) + " ") .
+
+  eq stringQidList(S) = stringQidList(S, nil) .
+  eq stringQidList("", QIL) = QIL .
+  eq stringQidList(S, QIL) = QIL qid(S) [owise] . ***if S =/= "" /\ find(S, " ", 0) = notFound .
+  ceq stringQidList(S, QIL)
+    = stringQidList(S'', QIL qid(S') )
+    if N := find(S, " ", 0)
+       /\ S' := substr(S, 0, N)
+       /\ S'' := substr(S, N + 1, length(S)) .
+
+  op msg2string : Msg -> String .
+  eq msg2string(MSG) = qidListString(metaPrettyPrint(upModule('MESSAGE, false), upTerm(MSG), none)) .
+
+  op string2msg : String -> Msg .
+  eq string2msg(S)
+    = downTerm(getTerm(metaParse(upModule('MESSAGE, false), stringQidList(S), 'Msg)), error(S)) .
+
+endm
+
+---(
+rew msg2string(to l("456",0) from l("123",0) msg prepare(tid(l("123",0),1),version("k1","v1",ts(l("123",0),1),"k2"),l("123",0)) ) .
+
+rew string2msg("to_from_msg_ `( l `( \"456\" `, 0 `) `, l `( \"123\" `, 0 `) `, prepare `( tid `( l `( \"123\" `, 0 `) `, s_ `( 0 `) `) `, version `( \"k1\" `, \"v1\" `, ts `( l `( \"123\" `, 0 `) `, s_ `( 0 `) `) `, \"k2\" `) `, l `( \"123\" `, 0 `) `) `) ") .
+)

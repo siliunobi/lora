@@ -1,0 +1,625 @@
+load full-maude
+
+fmod TAG-COMMANDS is
+    including COMMANDS .
+
+    op monitor_. : @ModExp@ -> @Command@ .
+    
+endfm 
+
+
+fmod META-TAG-SIGNATURE is
+	including META-FULL-MAUDE-SIGN .
+	
+	op TagGRAMMAR : -> FModule .
+	eq TagGRAMMAR = addImports((including 'TAG-COMMANDS .), GRAMMAR ) .
+
+endfm
+
+fmod TAG-BUILTINS is
+    including UNIT .
+    including DATABASE-DECLS  .
+    including EXT-QID-LIST .
+    
+    op tag : OModule -> OModule .
+    op tag : SModule -> SModule .
+    op tagID : Qid -> Qid .
+    
+    
+    var SM : SModule .
+    var Q : Qid .
+    var IL : ImportList .
+    var S : SortSet .
+    var SS : SubsortDeclSet .
+    var CDS : ClassDeclSet .
+    var SCDS : SubclassDeclSet .
+    var O : OpDeclSet .
+    var MS : MsgDeclSet .
+    var M : MembAxSet .
+    var E : EquationSet .
+    var R : RuleSet .
+    var DB : Database .
+    
+    eq tag(omod Q is
+	  IL
+    sorts S .
+    SS
+    CDS
+    SCDS
+    O
+    MS
+    M
+    E
+    R
+endom) = omod tagID(Q)  is
+IL
+    sorts S .
+    SS
+    CDS
+    SCDS 
+    O
+    MS
+    M
+    E
+    monitorRules(R)
+endom .
+
+    eq tag(mod Q is
+	  IL
+    sorts S .
+    SS
+	O
+    M
+    E
+    R
+endm) = mod tagID(Q)  is
+IL
+    sorts S .
+    SS
+    O 
+	M
+    E
+    monitorRules(R)
+endm .
+
+    vars T T' : Term .
+    var ATS : AttrSet .
+    var B : Bool .
+    var CD : Condition .
+    var ATR : AttrSet .
+    var Rl : Rule .
+    op monitorRules : RuleSet  -> RuleSet .
+    op monitorRulesAux : Rule  -> RuleSet .
+    
+    ops newMonitorObj   : -> Term .
+    ops newMonitorObjRecord : Term -> Term .
+    ops newMonitorObjRecord2 : Term -> Term .    
+    ops resultMonitorObj : Term Term -> Term .
+    ops resultMonitorObjInsert : Term Term -> Term .
+    ops resultMonitorObjInsert : Term Term Term Term Term -> Term .
+    ops resultMonitorObjInsert : Term Term Term Term Term Term -> Term .
+    *** here are the functions to generate terms for tagged monitors
+    *** I try to make them as generic as possible, but some paras are fixed for the simplicity 
+    eq newMonitorObj = '<_:_|_>['M@M:Address,'Monitor.ActorType,'_`,_['clock:_['GT@M:Nat],'log:_[
+	      'LOG@M:Log]]] .
+
+
+    eq newMonitorObjRecord(T1) =
+	'<_:_|_>['M:Address,'Monitor.ActorType,'_`,_['clock:_['GT@M:Nat],'log:_[
+	      '_`,_['_|->_[T1,'<_`,_`,_`,_`,_>['_|->_['RID@M:Address,'T1@M:Nat],'VTS2@M:VectorTime,
+		    'FFLAG@M:Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}]],'LOG@M:Log]]]] .
+
+    eq newMonitorObjRecord2(T1) =
+    '<_:_|_>['M@M:Address,'Monitor.ActorType,'_`,_['clock:_['GT@M:Nat],'log:_[
+          '_`,_['_|->_[T1,'<_`,_`,_`,_`,_>['VTS1@M:VectorTime,'VTS2@M:VectorTime,
+            'FFLAG@M:Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}]],'LOG@M:Log]]]] .
+
+    eq resultMonitorObjInsert(T1,T2) =
+  '<_:_|_>['M@M:Address,'Monitor.ActorType,'_`,_['clock:_['_+_['GT@M:Nat,'s_[
+      '0.Zero]]],'log:_['_`,_['_|->_[T1,'<_`,_`,_`,_`,_>['VTS1@M:VectorTime,
+        'insert[T2,'GT@M:Nat,'VTS2@M:VectorTime],'FFLAG@M:Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}]],'LOG@M:Log]]]] .
+
+    eq resultMonitorObjInsert(T1,T2,T3,T4,T5) =
+	'<_:_|_>['M@M:Address,'Monitor.ActorType,'_`,_['clock:_['_+_['GT@M:Nat,'s_[
+		  '0.Zero]]],'log:_['_`,_['_|->_[T1,'<_`,_`,_`,_`,_>['VTS1@M:VectorTime,
+		    'insert[T2,'GT@M:Nat,'VTS2@M:VectorTime],T3,T4,T5]],'LOG@M:Log]]]] .
+
+
+    eq resultMonitorObjInsert(T1,T2,T3,T4,T5,T6) =
+	'<_:_|_>['M@M:Address,'Monitor.ActorType,'_`,_['clock:_['_+_['GT@M:Nat,'s_[
+		  '0.Zero]]],'log:_['_`,_['_|->_[T1,'<_`,_`,_`,_`,_>['VTS1@M:VectorTime,
+		    'insert[T2,'GT@M:Nat,'VTS2@M:VectorTime],T3,T4,'kver[T5,T6]]],'LOG@M:Log]]]] .
+    
+
+    eq resultMonitorObj(T1,T2) = '<_:_|_>['M@M:Address,'Monitor.ActorType,
+            '_`,_['clock:_['_+_['GT@M:Nat,'s_['0.Zero]]],'log:_[
+	      'insert[T1, '<_`,_`,_`,_`,_>['_|->_[T2,'GT@M:Nat],'empty.VectorTime,
+          'false.Bool,'empty.Set`{KeyVersion`},'empty.Set`{KeyVersion`}],'LOG@M:Log]]]] .
+
+
+
+    eq monitorRules(Rl R) = monitorRulesAux(Rl) monitorRules(R)  .
+    eq monitorRules(none) = none . 
+
+    ceq monitorRulesAux(rl T => T' [ATR] .) = 
+	(rl T1 => T2 [ATR] .)
+      if '__[T1,T2] := tagLeftRightHand(T,T',false) .
+    
+    
+    ceq monitorRulesAux(crl T => T' if CD [ATR] .) =
+	  (crl T1 => T2 if CD [ATR] .)
+	  if '__[T1,T2] := tagLeftRightHand(T,T',false) .
+
+    op getReplicaID : Term -> Variable .
+    
+    eq getReplicaID('<_:_|_>[V,'Replica.ActorType,TL]) = V .
+    eq getReplicaID('<_:_|`>[V,'Replica.ActorType]) = V .
+    eq getReplicaID('<_:_|_>[V,'Client.ActorType,TL]) = V .
+    eq getReplicaID('<_:_|`>[V,'Client.ActorType]) = V .
+    eq getReplicaID('<_:_|_>[V,'Server.ActorType,TL]) = V .
+    eq getReplicaID('<_:_|`>[V,'Server.ActorType]) = V .
+    eq getReplicaID(Q[TL]) = getReplicaID(TL) [owise] .
+    ceq getReplicaID((T, TL)) = getReplicaID(T), getReplicaID(TL) if TL =/= empty . 
+    eq getReplicaID(C) = empty .
+    eq getReplicaID(V) = empty .
+    
+   op tagLeftRightHand : Term Term Bool -> Term .
+
+
+    vars Q' : Qid .
+    vars T1 T2 T3 T4 T5 T6 : Term .
+    vars TL TL1 TL2 TL3 TL' : TermList .
+
+    *** reutrn the attribute value of a given attribute id 
+    op getAttr : Qid Term -> TermList .
+    eq getAttr(Q,Q'[TL]) = if Q == Q' then TL else  getAttr(Q,TL) fi .
+
+    ceq getAttr(Q,(T,TL)) =
+	getAttr(Q,T), getAttr(Q,TL)        
+      if TL =/= empty .
+    
+    eq getAttr(Q,empty) =
+	empty .
+    var V : Variable .
+    var C : Constant .
+    
+    eq getAttr(Q,V) = empty .
+    eq getAttr(Q,C) = empty .
+
+
+    *** ops    : Term Term -> Bool .
+    ops isExecuted isCommitted isAborted isRmtCommitted : Term Term -> Term .
+
+    op getTID : Term -> Term .
+    op getTIDfromList : TermList -> TermList . 
+
+
+    eq getTIDfromList(('<_:_|_>[V,'Txn.ActorType,TL],TL')) = V, getTIDfromList(TL') .
+    eq getTIDfromList(('<_:_|`>[V,'Txn.ActorType],TL')) = V, getTIDfromList(TL') .
+
+    eq getTIDfromList(('<_:_|_>[V,'Transaction.ActorType,TL],TL')) = V, getTIDfromList(TL') .
+    eq getTIDfromList(('<_:_|`>[V,'Transaction.ActorType],TL')) = V, getTIDfromList(TL') .
+
+    eq getTIDfromList((Q[TL],TL')) = getTIDfromList((TL,TL')) [owise] . 
+    eq getTIDfromList((V,TL)) =  if getType(V) == 'Address then V, getTIDfromList(TL) else getTIDfromList(TL) fi .
+    eq getTIDfromList((C,TL)) = getTIDfromList(TL) .
+    eq getTIDfromList(empty) = empty .
+
+    op diff : TermList TermList -> TermList .
+    ceq diff((T1, TL1), TL2) =
+      if is T1 subTermOf TL2 then 
+        diff(deleteTerm(TL1,T1),deleteTerm(TL2,T1)) 
+      else T1, diff(deleteTerm(TL1,T1), TL2) 
+      fi
+      if TL2 =/= empty .
+
+    eq diff(empty, TL2) = TL2 .
+    eq diff(TL1, empty) = TL1 .
+
+    op deleteTerm : TermList Term -> TermList .
+    eq deleteTerm(empty, T) = empty .
+    eq deleteTerm((T, TL), T) = deleteTerm(TL,T) .
+    eq deleteTerm((T, TL), T1) = 
+      if T =/= T1 then 
+        deleteTerm(TL, T1) 
+      else 
+        T, deleteTerm(TL, T1)
+      fi .
+
+
+
+    *** T: LHS, T': RHS 
+    *** RHS of executing has a TID which is not in the LHS 
+    ceq isExecuted(T, T') = T1
+	if TL1 := getAttr('executing:_,T)  /\
+     TL2 := getAttr('executing:_,T') /\
+     TL3 := getTIDfromList(TL2) /\ 
+     TL3 =/= empty /\ 
+	   T1 := diff(getTIDfromList(TL1),TL3) .
+
+
+    ceq isCommitted(T, T') = T1
+  if TL1 := getAttr('committed:_,T)  /\
+     TL2 := getAttr('committed:_,T') /\
+     T1 := diff(getTIDfromList(TL1),getTIDfromList(TL2)) .
+
+
+    ceq isAborted(T, T') = T1
+  if TL1 := getAttr('aborted:_,T)  /\
+     TL2 := getAttr('aborted:_,T') /\
+     T1 := diff(getTIDfromList(TL1),getTIDfromList(TL2)) .
+
+    ceq isRmtCommitted(T, T') = T1
+  if TL1 := getAttr('rmtCommitted:_,T)  /\
+     TL2 := getAttr('rmtCommitted:_,T') /\
+     T1 := diff(getTIDfromList(TL1),getTIDfromList(TL2)) .
+
+
+    ceq getTID(T) = T3
+	if T2 := getAttr('executing:_,T) /\
+	  '<_:_|_>[T3,TL] := T2 .
+
+    ceq getTID(T) = T3
+      if T2 := getAttr('executing:_,T) /\
+	  '<_:_|`>[T3,TL] := T2 .
+
+    eq getTID(T) = 'nil.Address [owise] .
+    
+
+    ***(
+    ceq isRmtCommitted(T,T') = true 
+      if T1 := getAttr('recPropTxns:_,T)  /\
+	  '_;_['propagatedTxns[T3,TL],TL1] := T1 /\  *** T3 is the TID of the propagated tran 
+          T2 := getAttr('locked:_,T') /\   *** T2 is the locked trans 
+	  is T3 subTermOf T2 .
+  )
+
+    *** go to fix switch using walter case 
+    
+    eq isAborted(T,T') = 'nil.Address [owise] .
+    eq isCommitted(T,T') = 'nil.Address [owise] .
+    eq isExecuted(T,T') = 'nil.Address [owise] .
+    eq isRmtCommitted(T,T') = 'nil.Address [owise] .
+    
+    op getPropagatedTxnsID : Term -> Term .
+
+    ceq getPropagatedTxnsID(T) = T3
+    if T1 := getAttr('recPropTxns:_,T)  /\
+	  '_;_['propagatedTxns[T3,TL],TL1] := T1 .      
+          
+    --- gotTxns -> executing
+    --- condition : at left hand side executing is empty, right hand is not
+    --- T: lefthand-side object
+    --- T': righthand-side object
+    --- DB: database 
+    --- ceq tagLeftRightHand(T,T') =
+    ---    '__['__[newMonitorObj,T],'__[resultMonitorObj,T']]
+    ---  if getAttr('executing:_,T) == 'emptyTxnList.ObjectList /\
+    ---      getAttr('executing:_,T') =/= 'emptyTxnList.ObjectList .
+
+    --- this equation formalizes the execution of a transaction 
+    ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObj,T],'__[resultMonitorObj(T1,getReplicaID(T)),T']]
+      if not hasBranch(T') /\ 
+        T1 := isExecuted(T,T') /\
+        T1 =/= 'nil.Address .
+
+    *** to fix if_then_else_fi case 
+
+    ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObj,T],
+        tagBranch(T,T',resultMonitorObj(T1,getReplicaID(T)), newMonitorObj)]
+      if hasBranch(T') /\ 
+        T1 := isExecuted(T,T') /\
+        T1 =/= 'nil.Address .
+
+    
+      --- this equation formalizes the commit of a readonly transaction
+    --- condition : the executing tran is committed (including fast)
+  ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+	  '__[resultMonitorObjInsert(T2,
+	      getReplicaID(T),'true.Bool,
+        getAttr('readSet:_,T1),
+        getAttr('writeSet:_,T1),
+        getAttr('version:_,T1)),T']]
+      if not hasBranch(T') /\ 
+        T2 := isCommitted(T,T') /\
+        T2 =/= 'nil.Address /\ 
+	  T1 := getAttr('executing:_,T) .    
+
+ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+    '__[resultMonitorObjInsert(T2,
+        getReplicaID(T),'true.Bool,
+        getAttr('readSet:_,T1),
+        getAttr('writeSet:_,T1),
+        getAttr('version:_,T1)),T']]
+      if not hasBranch(T') /\ 
+        T2 := isCommitted(T,T') /\
+        T2 =/= 'nil.Address /\ 
+    T1 := getAttr('submitted:_,T) .    
+
+
+ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+    '__[resultMonitorObjInsert(T2,getReplicaID(T)),T']]
+      if not hasBranch(T') /\ 
+        T2 := isCommitted(T,T') /\
+        T2 =/= 'nil.Address /\ 
+        getAttr('submitted:_,T) == empty .  
+
+
+
+   *** to fix if_then_else_fi case  (committed case)
+  ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+      tagBranch(T, T',resultMonitorObjInsert(T2,getReplicaID(T),'true.Bool,
+                    getAttr('readSet:_,T1),
+                    getAttr('writeSet:_,T1),
+                    getAttr('version:_,T1)),
+              newMonitorObjRecord2(T2))]  
+      if hasBranch(T') /\ 
+        T2 := isCommitted(T,T') /\
+        T2 =/= 'nil.Address /\ 
+        T1 := getAttr('executing:_,T) .       
+
+ 
+   op  tagBranch : Term Term Term Term -> Term .
+   vars TT1 TT2 TT3 : Term .
+   
+   *** T1: left, T2: brach, T3: result monitor, T4: original monitor 
+   eq tagBranch(T1, 'if_then_else_fi[TT1,TT2,TT3], T3, T4) = 
+      if isAborted(T1,TT2) =/= 'nil.Address or 
+        isCommitted(T1,TT2) =/= 'nil.Address or 
+        isExecuted(T1,TT2) =/= 'nil.Address 
+        *** or isRmtCommitted(T1,TT2) =/= 'nil.Address 
+        then 
+           'if_then_else_fi[TT1,'__[T3,TT2],'__[T4,TT3]] 
+      else 
+           'if_then_else_fi[TT1,'__[T4,TT2],'__[T3,TT3]] 
+      fi .
+    
+   eq tagBranch(T1, '__[TT1,TT2], T3, T4) = 
+      if hasBranch(TT1) then '__[tagBranch(T1,TT1,T3,T4),TT2] else '__[TT1,tagBranch(T1,TT2,T3,T4)] fi .
+
+
+
+      --- this equation formalizes the abort of a trans 
+    --- condition : the executing tran is aborted
+     ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T], 
+        '__[resultMonitorObjInsert(T2,
+	      getReplicaID(T),'false.Bool,
+        getAttr('readSet:_,T1),
+        getAttr('writeSet:_,T1),
+        getAttr('version:_,T1)),T']]
+      if not hasBranch(T') /\ 
+          T2 := isAborted(T,T') /\
+          T2 =/= 'nil.Address /\ 
+          T1 := getAttr('executing:_,T)  .      
+
+      ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T], 
+        '__[resultMonitorObjInsert(T2,getReplicaID(T)),T']]
+      if not hasBranch(T') /\ 
+          T2 := isAborted(T,T') /\
+          T2 =/= 'nil.Address /\ 
+          getAttr('executing:_,T) == empty .       
+
+
+     ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T], 
+        '__[resultMonitorObjInsert(T2,
+        getReplicaID(T),'false.Bool,
+        getAttr('readSet:_,T1),
+        getAttr('writeSet:_,T1),
+        getAttr('version:_,T1)),T']]
+      if not hasBranch(T') /\ 
+          T2 := isAborted(T,T') /\
+          T2 =/= 'nil.Address /\ 
+          T1 := getAttr('submitted:_,T)  .  
+
+
+    --- condition : the executing tran is aborted
+     ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+        tagBranch(T,T', 
+            resultMonitorObjInsert(T2,getReplicaID(T),'false.Bool,
+                getAttr('readSet:_,T1),
+                getAttr('writeSet:_,T1),
+                getAttr('version:_,T1)),
+            newMonitorObjRecord2(T2))]
+      if hasBranch(T') /\ 
+         T2 := isAborted(T,T') /\
+         T2 =/= 'nil.Address /\ 
+         T1 := getAttr('executing:_,T)  .      
+
+
+
+      --- this equation formalizes the abort of a trans 
+    --- condition : the executing tran is aborted (including fast)
+    --- ceq tagLeftRightHand(T,T') =
+     ---   '__['__[newMonitorObjRecord(getTID(T)),T],
+ ---	  '__[resultMonitorObjInsert(getTID(T),
+	---      getReplicaID(T),'false.Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}),T']]
+     --- if not hasBranch(T') /\ isAborted(T,T')  .       
+    ***(
+    ceq tagLeftRightHand(T,T',B) =
+	if B then 
+          '__['__[newMonitorObjRecord(getTID(T)),T],
+	    '__[newMonitorObjRecord(getTID(T)),T']]
+	else
+	  '__[T,T']
+	fi 
+      if not hasBranch(T') /\ not isAborted(T,T') /\
+	  not isCommitted(T,T') /\ not isExecuted(T,T')
+	  /\ not isRmtCommitted(T,T')  . 
+
+      
+      
+      --- this equation formalizes the switch of a trans 
+      --- condition : the executing tran is committed (including fast)
+    ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord(getPropagatedTxnsID(T)),T],
+	  '__[resultMonitorObjInsert(getPropagatedTxnsID(T),
+	      getReplicaID(T),'FFLAG@M:Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}),T']]
+      if not hasBranch(T') /\ isRmtCommitted(T,T')  .       
+
+
+      *** to fix if_then_else_fi case 
+   ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord(getPropagatedTxnsID(T)),T],
+      '__[resultMonitorObjInsert(getPropagatedTxnsID(T),
+          getReplicaID(T),'FFLAG@M:Bool,'READS@M:Set`{KeyVersion`},'WRITES@M:Set`{KeyVersion`}),T']]
+      if hasBranch(T') /\ isRmtCommitted(T,T')  .   
+      )
+
+        ceq tagLeftRightHand(T,T',B) =
+        '__['__[newMonitorObjRecord2(T2),T],
+    '__[resultMonitorObjInsert(T2,getReplicaID(T)),T']]
+      if not hasBranch(T') /\ 
+        T2 := isRmtCommitted(T,T') /\
+        T2 =/= 'nil.Address .     
+
+
+    op tagRightHand : Term TermList -> TermList .
+    op hasBranch : TermList -> Bool .
+    eq hasBranch('__[TL]) = hasBranch(TL) .
+    eq hasBranch('if_then_else_fi[T1,T2,T3]) = true .
+    ceq hasBranch((T, TL)) = hasBranch(T) or hasBranch(TL) if TL =/= empty .
+    eq hasBranch(empty) = false .
+    eq hasBranch(T) = false [owise] .
+
+
+    --- to monitor each result in the if_then_else_fi statement 
+    ceq tagRightHand(T, (T', TL)) =
+	(tagRightHand(T, T'), tagRightHand(T,TL))
+      if TL =/= empty .
+    eq tagRightHand(T, empty) = empty .
+    
+    eq tagRightHand(T,'__[TL]) = '__[tagRightHand(T, TL)] . 
+
+    eq tagRightHand(T, 'if_then_else_fi[T1,T2,T3]) =
+	'if_then_else_fi[T1,tagRightHand(T,T2),tagRightHand(T,T3)]  .
+
+    ceq tagRightHand(T, '<_:_|_>[T1,'Replica.Replica,TL]) =
+      T3 
+      if '__[T2,T3] := tagLeftRightHand(T,'<_:_|_>[T1,'Replica.Replica,TL],true) .
+    
+    eq tagRightHand(T, T') = T' [owise] .
+
+      --- nothing changed, no tag
+
+    eq tagLeftRightHand(T,T',B) =
+        '__[T,T'] [owise] .
+
+
+    
+
+    ---eq tagID(Q) = string2qidList(string(Q) + "-TAGGED") .
+    eq tagID(Q) = string2qidList(string(Q)) .
+    
+endfm
+    
+    
+mod TAG-DATABASE-HANDLING is
+    protecting DATABASE-HANDLING .
+    protecting META-TAG-SIGNATURE .    
+    including TAG-BUILTINS .
+    
+    var N 				: Nat .
+    var X@Database         : DatabaseClass .
+    var O 				: Oid .
+    var QI 				: Qid .
+    vars QIL QIL' QIL''	        : QidList .
+    vars T T' T''		        : Term .
+    vars H H'			        : Header .
+    var Q 				: Qid .
+    vars DB DB' DB''           	: Database .
+    var F					: Qid .
+    vars MD M	M'	M''		: Module .
+    var Atts 			        : AttributeSet .
+    vars RP RP'			: ResultPair? .
+    vars ME ME' ME''	                : ModuleExpression . 
+    
+    crl [handle-tag-func] : 
+        < O         : X@Database | db : DB,
+				   input     : ('monitor_.[T]),
+				   output  : nil, Atts > => 
+        < O         : X@Database | db : DB'',
+				   input     : nilTermList,
+				    output : ('New 'module '\g Q '\o 'with 'monitors 'generated!),
+				   Atts  >
+      if  < DB' ; ME' > := evalModExp(parseModExp(T), DB) /\
+	  M := getTopModule(ME', DB') /\ 
+	  M' := tag(M) /\
+	  Q := getName(M') /\ 
+	  DB'' := insTermModule(Q,M',DB') .
+endm 
+
+
+mod MONITORING is
+    extending LOOP-MODE .
+    protecting TAG-DATABASE-HANDLING .
+    
+    subsort Object < State .
+    op o : -> Oid .
+    
+    var H 				: Header .
+    var O 				: Oid .
+    var X@Database 		        : DatabaseClass .
+    var QI 				: Qid .
+    vars QIL QIL' QIL''             : QidList .
+    var TL 				: TermList .
+    var DB 				: Database .
+    var Atts 			: AttributeSet .
+    
+    op init 			: -> System .
+    
+    
+    
+    rl [init] : init => [nil,
+	  < o		: Database | 
+	  db		: initialDatabase, 
+	  input 	: nilTermList , 
+          default      : 'CONVERSION ,
+	  output 	: nil >,
+	  ('\s '\s '\s '\s '\s '\g string2qidList("Welcome to CAT!") '\o)] .
+    
+    rl [input] : 	[QI QIL, 
+	  < O 			: X@Database | 
+	  input 		: nilTermList, 
+	  output 		: nil, Atts >,  
+	  QIL' ] => 
+      if metaParse(TagGRAMMAR, QI QIL, '@Input@) :: ResultPair
+	then
+	  [nil, 
+	    < O 		: X@Database | 
+	    input 		: getTerm(metaParse(TagGRAMMAR, QI QIL, '@Input@)), 
+	    output 		: nil, Atts >, 
+	    QIL']
+	else 
+	  [nil, 
+	    < O 		: X@Database | 
+	    input 		: nilTermList, 
+	    output 		: ('\r 'WARNING: '\o printSyntaxError(metaParse(TagGRAMMAR, QI QIL, '@Input@), QI QIL) '\n 
+	      'ERROR: 'No 'parse 'for 'input.), Atts >, 
+	    QIL' ]
+	fi .
+    
+    rl 	[output] : 	[QIL, < O : X@Database | 
+	  output 	: (QI QIL'), Atts >,
+	  QIL''] =>
+	[QIL, < O 	: X@Database | 
+	  output 	: nil, Atts >, (QI QIL' QIL'')] .
+endm
+
+set print conceal on .
+
+*** print conceal mod_is_sorts_._____endm .
+*** print conceal fmod_is_sorts_.____endfm .
+print conceal db .
+    
+loop init .
+    

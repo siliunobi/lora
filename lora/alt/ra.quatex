@@ -1,0 +1,2 @@
+LatestV() = { s.rval(6) } ;
+eval E[ # LatestV() ] ; 

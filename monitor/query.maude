@@ -1,0 +1,109 @@
+load apmaude
+
+(mod SORTS is
+  inc SCHEDULING .
+  pr NAT .
+  
+  sorts Query Queries Key Value Timestamp Data Oids .
+  subsort Data < Payload .
+  subsort Nat < Timestamp .
+  subsort Nat < Value .
+  subsort Query < Queries < Payload .
+  subsort Oid < Oids .
+
+  op <_`,_> : Value Timestamp -> Data [ctor] .
+  op null : -> Data .
+  
+  op read : Key -> Query .
+  
+  op ept : -> Queries .
+  op _::_ : Queries Queries -> Queries [assoc id: ept] .
+
+  op empty : -> Oids .
+  op _;_ : Oids Oids -> Oids [assoc comm id: empty] .  
+endm)
+
+
+
+(view Key from TRIV to SORTS is sort Elt to Key . endv)
+(view Data from TRIV to SORTS is sort Elt to Data . endv)
+(view Oids from TRIV to SORTS is sort Elt to Oids . endv)
+
+(mod OBJS is
+  inc SORTS .
+  pr MAP{Key,Data} .
+  pr MAP{Key,Oids} .
+  
+  ops Client Server Table : -> ObjType .
+  
+  op queries:_ : Queries -> Attribute .
+  op waiting:_ : Oids  -> Attribute .
+  op read:_    : Data -> Attribute .
+  op replicas:_ : Map{Key,Oids} -> Attribute .  
+  op database:_ : Map{Key,Data} -> Attribute .
+endm)
+
+(mod QUERY is
+  inc OBJS .
+  
+  vars O O' TB : Oid .  vars QS QS' : Queries .
+  var OS : Oids .  var R : Map{Key,Oids} .
+  vars AS AS' : Attributes .  var K : Key .
+  var DB : Map{Key,Data} .  vars V V' : Value .
+  var P : Payload .  vars DAT DAT' : Data .  
+  vars TS TS' : Timestamp .
+  
+
+  
+  rl [reply] :
+     (to O from O' : read(K)) 
+     < O : Server | database: DB, AS >
+  => 
+     < O : Server | database: DB, AS > 
+     (to O' from O : DB[K]) .
+
+
+
+
+
+
+  rl [issue] :
+     < O : Client | queries: (read(K) :: QS), waiting: empty, read: null, replicas: R, AS > 
+  => 
+     < O : Client | queries: (read(K) :: QS), waiting: (R[K]), read: null, replicas: R, AS > 
+     (propagate read(K) to R[K] from O) .
+
+
+
+  op propagate_to_from_ : Payload Oids Oid -> Msgs . 
+  eq propagate P to (O ; OS) from O' = (propagate P to OS from O') (to O from O' : P) .
+  eq propagate P to empty from O' = null .
+
+
+  rl [req] :
+     (to O : QS')
+     < O : Client | queries: QS, AS > 
+  =>
+     < O : Client | queries: (QS :: QS'), AS > .
+   
+
+   
+
+  rl [update] :
+     (to O from O' : DAT') 
+     < O : Client | read: DAT, waiting: (O' ; OS), AS >
+  => 
+     < O : Client | read: latest(DAT,DAT'), waiting: OS, AS > .
+	 
+  op latest : Data Data -> Data .
+  eq latest(< V,TS >,null) = < V,TS > .
+  eq latest(null,< V,TS >) = < V,TS > .
+  eq latest(< V,TS >,< V',TS' >) = if TS >= TS' then < V,TS > else < V',TS' > fi .
+   
+ crl [finish] :
+     < O : Client | queries: (read(K) :: QS), waiting: empty, read: DAT, AS >
+  => 
+     < O : Client | queries: QS, waiting: empty, read: null, AS > 
+     if DAT =/= null .
+endm)
+

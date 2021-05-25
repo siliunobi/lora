@@ -1,0 +1,122 @@
+load shim-dynamic-new
+
+mod CLIENT is
+  pr SHIM-DYNAMIC .
+  pr MAP{String,String} .
+
+  sort Table .
+  subsort Table < Cid .
+  op Table : -> Table .
+
+  op tb : -> Oid .
+
+  op table :_ : Map{String,String} -> Attribute [ctor gather(&)] . 
+
+
+  sort Client .  *** Shim has as ID l(IP,0), e.g., l("localhost",0)
+  subsort Client < Cid .
+  op Client : -> Client .
+
+  op sent :_ : Nat -> Attribute [ctor gather(&)] .
+  op rcved :_ : Nat -> Attribute [ctor gather(&)] .
+
+
+  vars O O' TB : Oid .
+  vars N N' N'' : Nat .
+  vars AS AS' : AttributeSet .
+  vars STR KR KV READ VALUE : String .
+  var KVS : Map{String,String} .
+
+ crl < O : Table | table : KVS >
+      [KR]
+    =>
+      < O : Table | table : insert(substr(KR,0,N),substr(STR,0,N'),KVS) >
+      if N := find(KR, "[eok]", 0) /\
+         STR := substr(KR, N + 5, length(KR)) /\
+         N' := find(STR, "[eoa]", 0) .
+
+---(
+ crl < O : Table | table : KVS >
+     [KR]
+   => 
+     < O : Table | table : insert(substr(KR,0,N),substr(STR,0,N'),KVS) >  
+     if N := find(KR, "[eok]", 0) /\ 
+        STR := substr(KR, N + 5, length(KR)) /\
+        N' := find(STR, "[eoa]", 0) .
+)
+
+ crl < O : Client | sent : N', AS >
+      < TB : Table | table : KVS, AS' >
+      [READ]
+    =>
+      < O : Client | sent : N' + 1, AS >
+      < TB : Table | table : KVS, AS' >
+      (msg READ from O to l(KVS[substr(READ,0,N)]))
+      if N := find(READ, "[eor]", 0) .
+
+---(
+ crl < O : Client | sent : N, AS >
+     < TB : Table | table : KVS, AS' >
+     [READ]
+   => 
+     < O : Client | sent : N + 1, AS >
+     < TB : Table | table : KVS, AS' >
+     (msg READ from O to l(KVS[substr(READ,0,N)]))
+     if N := find(READ, "[eor]", 0) .
+)
+
+
+
+ crl < O : Client | sent : N', AS >
+      < TB : Table | table : KVS, AS' >
+      [KV]
+    =>
+      < O : Client | sent : N' + 1, AS >
+      < TB : Table | table : KVS, AS' >
+      (msg KV from O to l(KVS[substr(KV,0,N)]))
+      if N := find(KV, "[eok]", 0) /\
+      STR := substr(KV, N + 5, length(KV)) /\
+      N'' := find(STR, "[eov]", 0) .
+
+---(
+ crl < O : Client | sent : N, AS >
+     < TB : Table | table : KVS, AS' >
+     [KV]
+   => 
+     < O : Client | sent : N + 1, AS >
+     < TB : Table | table : KVS, AS' >
+     (msg KV from O to l(KVS[substr(KV,0,N)]))
+     if N := find(KV, "[eok]", 0) .
+)
+
+ rl < O : Client | rcved : N', AS >
+       (msg VALUE from O' to O)
+     =>
+       < O : Client | rcved : N' + 1, AS >
+       [VALUE] .
+
+---(
+   rl < O : Client | rcved : N, AS >
+      (msg VALUE from O' to O)
+    =>
+      < O : Client | rcved : N + 1, AS >
+      [VALUE] .
+)
+
+
+
+  op init : -> Configuration .
+  eq init = <>
+            < l("10.193.213.161",0) : ClientShim | sockets : none, contacts : empty >
+            < l("10.193.213.161",2) : Client | sent : 0, rcved : 0 > 
+            createClientTcpSocket(socketManager,l("10.193.213.161",2),"128.174.244.87",9810)
+                  
+            < l("10.193.213.161",1) : ServerShim | sockets : none, contacts : empty >
+
+            createServerTcpSocket(socketManager, l("10.193.213.161",2), 9910, 5)
+            < tb : Table | table : empty > .
+            
+endm
+
+erew init .
+

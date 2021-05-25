@@ -1,0 +1,87 @@
+mod SAMPLER is
+  pr RANDOM .
+  pr COUNTER .
+  pr CONVERSION .
+
+  op sampleBerWithP : Float -> [Bool] .
+  op sampleUniWithInt : Nat -> [Nat] .
+  op genRandom : Float Float -> [Float] .
+  op sampleExp : Float -> [Float] .
+  vars n s : Nat .
+
+  op rand : -> [Float] .
+  rl [rnd] : rand => float(random(counter) / 4294967296) .
+
+  op rrand : -> [Rat] .
+  rl [rrnd] : rrand => random(counter) / 4294967296 .
+
+  vars R R1 Min Max RAND : Float .
+
+  eq sampleBerWithP(R) = if rand < R then true else false fi .
+  eq sampleUniWithInt(n) = floor(rrand * n) .
+  eq genRandom(Min, Max) = rand * (Max - Min) + Min .
+  eq sampleExp(R) = (- log(rand)) / R . 
+
+  op sampleNormal : -> [Float] .
+  op $sampleNormal : Float -> [Float] .
+  eq sampleNormal = $sampleNormal(rand) .
+  eq $sampleNormal(RAND) = sqrt(- 2.0 * log(RAND)) * cos(2.0 * pi * RAND) .
+
+  vars MEAN SD : Float .    --- mean and standard deviation
+
+  op sampleLogNormal : Float Float -> [Float] . 
+  eq sampleLogNormal(MEAN,SD) = exp(MEAN + SD * sampleNormal) .
+
+  vars SHAPE SCALE : Float .  --- Shape k and scale lambda parameters
+
+  op sampleWeibull : Float Float -> [Float] .
+  eq sampleWeibull(SHAPE,SCALE) = SCALE * exp((1.0 / SHAPE) * log(- log(rand))) .  --- k, lambda
+
+  --- generating Zipfian random-variables
+  --- SKEW = 0 is a uniform distribution; English has a Zipfian skew of about 1
+  --- in this implementation SKEW can't be 1. So we use 1.000001 instead
+  --- CARD is the cardinality: the total number of items
+  vars SKEW CARD : Float . 
+  vars X P D M MX MXX MXXX A B NEWX
+       M' MX' MXX' MXXX' A' B' NEWX'  : Float . 
+
+  op tolerance : -> Float .
+  eq tolerance = 0.01 .
+
+  op sampleZipf : Float Float -> Float .
+  op $sampleZipf : Float Float Float Float -> Float .  --- SKEW, P, X
+  op $$sampleZipf : Float Float Float  -> Float .  --- SKEW, X, D
+  op $$$sampleZipf : Float Float Float Float Float 
+                     Float Float Float Float Float -> Float .
+
+  --- e.g., sampleZipf(2.0,11.0) would sample 1.0 - 10.0 on Zipf
+  eq sampleZipf(SKEW,CARD) = floor($sampleZipf(SKEW,CARD,rand,CARD / 2.0)) .  --- use floor to cut the tail
+  eq $sampleZipf(SKEW,CARD,P,X) = $$sampleZipf(SKEW,X,P * (12.0 * (exp((1.0 - SKEW) * log(CARD)) - 1.0) 
+                    / (1.0 - SKEW) + 6.0 - 6.0 * exp((- SKEW) * log(CARD)) 
+                    + SKEW - exp((- 1.0 - SKEW) * log(CARD)) * SKEW)) .
+ ceq $$sampleZipf(SKEW,X,D) = $$$sampleZipf(SKEW,X,D,M,MX,MXX,MXXX,A,B,NEWX) 
+       if M := exp((- 2.0 - SKEW) * log(X)) /\
+          MX := M * X /\
+          MXX := MX * X /\
+          MXXX := MXX * X /\
+          A := 12.0 * (MXXX - 1.0) / (1.0 - SKEW) + 6.0 * (1.0 - MXX) + (SKEW - (MX * SKEW)) - D /\
+          B := 12.0 * MXX + 6.0 * (SKEW * MX) + (M * SKEW * (SKEW + 1.0)) /\
+          NEWX := max(1.0, X - A / B) .  
+ ceq $$$sampleZipf(SKEW,X,D,M,MX,MXX,MXXX,A,B,NEWX) =
+       if abs(NEWX - X) <= tolerance
+         then NEWX
+         else $$$sampleZipf(SKEW,NEWX,D,M',MX',MXX',MXXX',A',B',NEWX')
+       fi
+     if M' := exp((- 2.0 - SKEW) * log(NEWX)) /\
+        MX' := M' * NEWX /\
+        MXX' := MX' * NEWX /\
+        MXXX' := MXX' * NEWX /\
+        A' := 12.0 * (MXXX' - 1.0) / (1.0 - SKEW) + 6.0 * (1.0 - MXX') + (SKEW - (MX' * SKEW)) - D /\
+        B' := 12.0 * MXX' + 6.0 * (SKEW * MX') + (M' * SKEW * (SKEW + 1.0)) /\
+        NEWX' := max(1.0, NEWX - A' / B') .
+endm
+
+---set clear rules off .
+---rewrite sampleLogNormal(2.0,2.0) .
+---rewrite sampleWeibull(5.0,1.0) .
+---rewrite sampleZipf(2.0,11.0) . --- would sample 1-10 on Zipf

@@ -1,0 +1,97 @@
+load names
+
+fmod REPLICA-TABLE is
+  including TXN-AUX1 .
+
+  sort KeyReplicas .
+
+  op emptyTable : -> KeyReplicas [ctor] .
+---  op replicatingSites : Key AddressSet -> KeyReplicas [ctor] .
+  op replicatingSites : Key AddressList -> KeyReplicas [ctor] .  --- head of list is preferred site
+  op _;;_ : KeyReplicas KeyReplicas -> KeyReplicas [ctor assoc comm id: emptyTable] .
+
+
+  var RT : KeyReplicas .
+  var K : Key .
+  var KS : KeySet .
+  vars RID RID' : Address .
+  var RIDS : AddressSet .
+  vars RIDSS RIDSS' : AddressList .
+  var WS : WriteSet .
+  var V : Value .
+
+  op replicas : WriteSet KeyReplicas -> AddressSet .
+  eq replicas(empty,RT) = empty .
+  eq replicas((K |-> V,WS), replicatingSites(K,RIDSS) ;; RT) =
+       makeSet(RIDSS) ; replicas(WS,RT) .
+  eq replicas(WS,RT) = empty [owise] .
+
+  op allServers : KeyReplicas -> AddressSet .
+  eq allServers(replicatingSites(K,RIDSS) ;; RT) = 
+       makeSet(RIDSS) ; allServers(RT) .
+  eq allServers(emptyTable) = empty . 
+  
+  op makeSet : AddressList -> AddressSet .
+  eq makeSet((RID ;; RIDSS)) = RID ; makeSet(RIDSS) .
+  eq makeSet(emptyAddrList) = empty .
+
+  op preferredSite : Key KeyReplicas -> Address .
+  eq preferredSite(K,(replicatingSites(K,(RID ;; RIDSS)) ;; RT)) = RID .
+
+  op allPreferredSites : WriteSet KeyReplicas -> AddressSet .
+  eq allPreferredSites((K |-> V,WS), replicatingSites(K,(RID ;; RIDSS)) ;; RT) =
+       RID ; allPreferredSites(WS,RT) .
+  eq allPreferredSites(empty,RT) = empty .
+  eq allPreferredSites(WS,RT) = empty [owise] .
+
+  op `[_`] : KeyReplicas -> ReplicaTable [ctor] .
+
+  op replicas : WriteSet ReplicaTable -> AddressSet .
+  eq replicas(WS, [RT]) = replicas(WS, RT) .
+  op preferredSite : Key ReplicaTable -> Address .
+  eq preferredSite(K,[RT]) = preferredSite(K,RT) .
+  op allServers : ReplicaTable -> AddressSet .
+  eq allServers([RT]) = allServers(RT) .
+  op allPreferredSites : WriteSet ReplicaTable -> AddressSet .
+  eq allPreferredSites(WS,[RT]) = allPreferredSites(WS,RT) .
+
+  op localReplica : Key Address ReplicaTable -> Bool .
+  op localReplica : Key Address KeyReplicas -> Bool .
+  eq localReplica(K,RID,[RT]) = localReplica(K,RID,RT) .
+  eq localReplica(K,RID,replicatingSites(K, RIDSS ;; RID ;; RIDSS') ;; RT) = true .
+  eq localReplica(K,RID,RT) = false [owise] .
+
+  op allLocalPreferred : WriteSet Address ReplicaTable -> Bool .
+  op allLocalPreferred : WriteSet Address KeyReplicas -> Bool .
+  eq allLocalPreferred(WS,RID,[RT]) = allLocalPreferred(WS,RID,RT) .
+ ceq allLocalPreferred((K |-> V,WS),RID,replicatingSites(K,RID' ;; RIDSS) ;; RT) = false
+       if RID =/= RID' .
+  eq allLocalPreferred(WS,RID,RT) = true [owise] .
+
+  op _in_ : Address AddressList -> Bool .
+  eq RID in (RIDSS ;; RID ;; RIDSS') = true .
+  eq RID in RIDSS = false [owise] .
+
+  op locRepWS : WriteSet Address ReplicaTable -> WriteSet .
+  op locRepWS : WriteSet Address KeyReplicas -> WriteSet .
+  eq locRepWS(WS,RID,[RT]) = locRepWS(WS,RID,RT) .
+  eq locRepWS((K |-> V,WS),RID,replicatingSites(K,RIDSS ;; RID ;; RIDSS') ;; RT) =
+       K |-> V, locRepWS(WS,RID,RT) .
+  eq locRepWS(WS,RID,RT) = empty [owise] .
+ 
+
+  ---(
+  --- test
+  ops k1 k2 k3 : -> Key .
+  ops v1 v2 v3 : -> Value .
+  ops rid1 rid2 rid3 : -> Address .
+  op flag : -> Bool .
+
+  eq flag = allLocalPreferred((k1 |-> v1, k2 |-> v2, k3 |-> v3),rid1,[replicatingSites(k1,(rid1 rid2)) ;; 
+                                                                      replicatingSites(k2,(rid1 rid3)) ;;
+                                                                      replicatingSites(k3,(rid2 rid1))]) .
+  )
+endfm
+
+--- rewrite flag .
+

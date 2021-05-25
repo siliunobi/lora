@@ -1,0 +1,19 @@
+load query
+
+mod INIT-QUERY is
+  inc QUERY .
+  
+  ops c1 c2 s1 s2 s3 : -> Oid . 
+  ops k1 k2 k3 : -> Key .
+   
+  op initconf : -> Config .
+  eq initconf =
+     (to c1 : (read(k1) :: read(k3))) (to c2 : read(k2))
+     < c1 : Client | queries: ept, waiting: empty, read: null,
+                     replicas: (k1 |-> (s1 ; s2), k2 |-> (s2 ; s3), k3 |-> (s1 ; s3)) >
+     < c2 : Client | queries: ept, waiting: empty, read: null,
+                     replicas: (k1 |-> (s1 ; s2), k2 |-> (s2 ; s3), k3 |-> (s1 ; s3)) >
+     < s1 : Server | database: (k1 |-> < 23, 1 >, k3 |-> < 8, 4 >) >
+     < s2 : Server | database: (k1 |-> < 10, 5 >, k2 |-> < 7, 3 >) >
+     < s3 : Server | database: (k2 |-> < 14, 2 >, k3 |-> < 3, 6 >) > .
+endm

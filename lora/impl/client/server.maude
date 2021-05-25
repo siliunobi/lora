@@ -1,0 +1,141 @@
+load shim-dynamic-new
+
+mod SERVER is
+  pr SHIM-DYNAMIC .
+  pr MAP{String,String} .
+  pr LIST{Oid} .
+
+  sort Table .
+  subsort Table < Cid .
+  op Table : -> Table .
+
+  op tb : -> Oid .
+
+  op table :_ : Map{String,String} -> Attribute [ctor gather(&)] . 
+
+
+  sort Server .  *** Shim has as ID l(IP,0), e.g., l("localhost",0)
+  subsort Server < Cid .
+  op Server : -> Server .
+
+  op store :_ : Map{String, String} -> Attribute [ctor gather(&)] .  
+
+
+  vars AS AS' : AttributeSet .
+  vars O O' TB : Oid .
+  vars N' N : Nat .
+  vars STR KV READ KR VALUE : String .
+  vars STORE KVS : Map{String,String} .
+
+
+  *** load 
+ crl < O : Server | store : STORE >
+     [KV]
+   => 
+     < O : Server | store : insert(substr(KV,0,N),substr(STR,0,N'),STORE) >  
+     if N := find(KV, "[eok]", 0) /\ 
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+
+---(
+  *** post load
+ crl < O : Table | table : KVS >
+    [KR]
+  => 
+    < O : Table | table : addKeyReplica(KR,KVS) >
+    if N := find(KR,"[eoa]",0) .
+)
+
+  op addKeyReplica : String Map{String,String} -> Map{String,String} .
+ ceq addKeyReplica(KR,KVS) = addKeyReplica(substr(STR,N' + 5,length(STR)),insert(substr(KR,0,N),substr(STR,0,N'),KVS))
+       if N := find(KR, "[eok]", 0) /\ 
+        STR := substr(KR, N + 5, length(KR)) /\
+         N' := find(STR, "[eoa]", 0) .
+  eq addKeyReplica("",KVS) = KVS .
+
+
+  *** txn
+ crl < O : Server | AS >
+     < TB : Table | table : KVS, AS' >
+     (msg READ from O' to O)
+   => 
+     < O : Server | AS >
+     < TB : Table | table : KVS, AS' >
+     genReads(READ,KVS,O)
+     if N := find(READ,"[eor]",0) .
+
+  op genReads : String Map{String,String} Oid -> Configuration .
+ ceq genReads(READ,KVS,O) = genReads(STR,KVS,O)
+     (msg substr(READ,0,N) from O to l(KVS[substr(READ,0,N)]))
+     if N := find(READ, "[eor]", 0) /\
+        STR := substr(READ,N + 5,length(READ)) .
+  eq genReads("",KVS,O) = none .
+
+
+
+
+ crl < O : Server | AS >
+     < TB : Table | table : KVS, AS' >
+     (msg KV from O' to O)
+   => 
+     < O : Server | AS >
+     < TB : Table | table : KVS, AS' >
+     genWrites(KV,KVS,O)
+     if N := find(KV,"[eov]",0) .
+
+  op genWrites : String Map{String,String} Oid -> Configuration .
+  eq genWrites("",KVS,O) = none .
+ ceq genWrites(KV,KVS,O) = genWrites(substr(KV,N' + 5,length(KV)),KVS,O)
+     (msg substr(KV,0,N' + 5) from O to l(KVS[substr(KV,0,N)]))   
+     if N := find(KV, "[eok]", 0) /\
+        N' := find(KV, "[eov]", 0) .
+
+
+
+  crl < O : Server | store : STORE >
+      (msg READ from O' to O)
+    =>
+      < O : Server | store : STORE >
+      (msg STORE[substr(READ,0,N)] from O to O')
+      if N := find(READ, "[eor]", 0) . 
+
+
+
+ crl < O : Server | store : STORE >
+     (msg KV from O' to O)
+   => 
+     < O : Server | store : insert(substr(KV,0,N),substr(STR,0,N'),STORE) > 
+     (msg "done" from O to O') 
+     if N := find(KV, "[eok]", 0) /\ 
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+
+
+   rl < O : Server | AS >
+      (msg VALUE from O' to O)
+    =>
+      < O : Server | AS >
+      (msg VALUE from O to client-addr) .
+
+  *** maude client ip
+  op client-addr : -> Oid .
+  eq client-addr = l(addr,2) .
+
+  op addr : -> String .
+  eq addr = "192.168.1.3" .
+
+  op self : -> String .
+  eq self = "192.168.1.3" .
+
+  op init : -> Configuration .
+  eq init = <>
+            < l(self,0) : ServerShim | sockets : none, contacts : empty >
+            < l(self) : Server | store : empty >
+            createServerTcpSocket(socketManager, l(self), 9810, 5) 
+            < tb : Table | table : empty > .
+            
+endm
+
+---erew init .
+
+
