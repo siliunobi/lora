@@ -1,4 +1,4 @@
-### Artifacts for "All in One: Design, Verification, and Implementation of Latency-Optimal Read Atomic Transactions"
+## Artifacts for "All in One: Design, Verification, and Implementation of Latency-Optimal Read Atomic Transactions"
 
 - The "lora" folder contains:
   - the Maude specifications of LORA, RAMP-F, and ALT;
