@@ -1,1 +1,7 @@
-In each folder "test.maude" contains the formal definitions of the performance and consistency properties; "initial-states.maude" contains the Maude implementation of the workload generator.
+In each folder of some RA algorithm:
+
+- "test.maude" contains the formal definitions of the performance and consistency properties; 
+
+- "initial-states.maude" contains the Maude implementation of the workload generator.
+
+The "impl" folder contains the generated client-side and server-side implementations, respectively.
