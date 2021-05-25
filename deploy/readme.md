@@ -28,7 +28,7 @@ Under the hood:
 
 Computing performance (e.g., throughput):
 1. Login to any node and run: cd /users/nobi/ramp/maude-ramp/contrib/YCSB/ycsb_scripts
-2. >> python compute_throughput.py 0 3
+2. run compute_throughput.py 0 3
 
 Note that
 - the above command requires the initial and final client IDs. E.g., the above command refers to the case that the initial client ID is 0 and the final client ID is 1
