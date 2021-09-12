@@ -1,0 +1,78 @@
+---load ramp-f
+---load ramp-s
+load 2pl
+
+mod INIT-SERVER is
+  inc RAMP-F .
+  inc SHIM-DYNAMIC .
+
+  var AS : AttributeSet .
+  vars O O' : Oid .
+  vars N' N : Nat .
+  vars STR KV : String .
+  var STORE : Versions .
+  var LC : KeyTimestamps .
+
+---(
+ *** load
+  crl < O : Replica | datastore : STORE, latestCommit : LC, AS >
+      [KV,O']
+    =>
+      < O : Replica | datastore : addKeyValue(KV,STORE),
+                      latestCommit : addKeyTS(KV,LC), AS >
+      if N := find(KV,"[eov]",0) .
+
+  op addKeyValue : String Versions -> Versions .
+ ceq addKeyValue(KV,STORE) = addKeyValue(substr(STR,N' + 5,length(STR)),
+       (version(substr(KV,0,N),substr(STR,0,N'),ts(dftOid,0),empty),STORE))
+     if N := find(KV, "[eok]", 0) /\
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+  eq addKeyValue("",STORE) = STORE .
+
+  op addKeyTS : String KeyTimestamps -> KeyTimestamps .
+ ceq addKeyTS(KV,LC) = addKeyTS(substr(STR,N' + 5,length(STR)), 
+       insert(substr(KV,0,N),ts(dftOid,0),LC)) 
+     if N := find(KV, "[eok]", 0) /\
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+  eq addKeyTS("",LC) = LC .
+)
+
+  *** eq port = 9910 .  *** the base port for server talking to server
+  eq backLog = 1 .  *** the BACKLOG parameter on the server side
+  op self : -> String .
+
+  op initDatastore : -> Versions .
+---  op initLatestCommit : -> KeyTimestamps .
+  
+  ***START AUTOMATICALLY GENERATED PARAMETER CODE***
+  eq self = "$1" .
+  eq numberOfServerSockets = $2 . *** one for load, one(s) for client(s)
+  
+  eq initDatastore = $3 .
+---  eq initLatestCommit = $4 .
+ 
+  ***END AUTOMATICALLY GENERATED PARAMETER CODE***
+
+  op init : -> Configuration .
+  eq init = <>
+            < l(self,10001) : ServerShim | sockets : none, contacts : empty, bufferedMsgs : none, created : 0 >
+            < l(self) : Replica | datastore : initDatastore, locks : empty >
+
+            ***createServerTcpSocket(socketManager, l(self), 9810, 10)  *** opened for load
+
+	    *** Following are ports for server - maude client communication
+	    ***START AUTOMATICALLY GENERATED SOCKET CODE***
+	    createServerTcpSocket(socketManager, l(self), 9000, 10)
+            ***createServerTcpSocket(socketManager, l(self), 9001, 10)
+	    ***END AUTOMATICALLY GENERATED SOCKET CODE***
+        .
+
+        --- < l(self,10000) : ClientShim | sockets : none, contacts : empty, bufferedMsgs : none >
+endm
+
+---rew init .
+erew init .
+
+

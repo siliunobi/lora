@@ -1,0 +1,337 @@
+load ramp_f
+
+mod INITIAL-STATES is
+  including RAMP-F .
+  including APMAUDE .
+  inc NAMES .
+  
+  vars RTX WTX RWTX REPLS REPLS' KEYS REPLS2 ROPS WOPS RWOPS R-OR-W-OR-RW N N' CLS CLS' DCS DCS' : Nat .
+  var RID : Int .
+  var KAD : KeyAccessDistr . 
+  var C : Config .
+  vars KS KS' : KeyList .
+  var K : Key .
+  var VS : Versions .
+  vars AS AS' : AttributeSet .
+  vars TB DC ADDR A OID TID : Address .
+  vars RIDS ADDRLIST : AddressList .
+  var KEYREPLICAS : KeyReplicas .
+  vars TXNS TXNS' : ConfigList .
+  var OPS : OperationList .
+  var VARS : LocalVars .
+  var VAR : LocalVar .
+  vars KVARS KVARS' : KeyVars .
+  var EXPR : Expression .
+  var DR : DcReplicas .
+  var ADDRSET : AddressSet .
+  var DRL : ListOfDcReplicas .
+   
+  sort KeyAccessDistr .
+  op uniform : -> KeyAccessDistr [ctor] .
+  op zipf : -> KeyAccessDistr [ctor] .
+  op hotspot : -> KeyAccessDistr .
+  
+  sort ListOfDcReplicas .
+  op nil : -> ListOfDcReplicas [ctor] .
+  op dcl : Address AddressList -> ListOfDcReplicas [ctor] .
+  op _;;_ : ListOfDcReplicas ListOfDcReplicas -> ListOfDcReplicas [ctor assoc id: nil] .
+  
+  op dcList : DcReplicas -> ListOfDcReplicas .
+  eq dcList(DR ; dc(DC,ADDRSET)) = dcl(DC,makeList(ADDRSET)) ;; dcList(DR) .
+  eq dcList(empty) = nil .
+
+  op makeList : AddressSet -> AddressList .
+  eq makeList(ADDR ; ADDRSET) = ADDR ;; makeList(ADDRSET) .
+  eq makeList(empty) = emptyAddrList .
+  
+  op size : AddressList -> Nat .
+  eq size(ADDR ;; ADDRLIST) = s size(ADDRLIST) .
+  eq size(emptyAddrList) = 0 .
+  
+  op nth : NzNat AddressList -> Address .
+  eq nth(1,(ADDR ;; ADDRLIST)) = ADDR .
+  eq nth(s N,(ADDR ;; ADDRLIST)) = nth(N,ADDRLIST) .
+
+  
+  --- # of ro-txns, # of wo-txns, # of rw-txns, # of clients, # of datacenters, # of replicas, # of keys, # of ops per txn, key access distr
+  --- # of operations per transaction: we set it to 2 or 4 in our experiments
+  --- txn styles used: 
+  --- ro-txn: r(x) r(y) r(u) r(v)
+  --- wo-txn: w(x) w(y) w(u) w(v)
+  --- rw-txn: r(x) w(x) r(y) w(y)
+  op init : NzNat NzNat NzNat NzNat NzNat NzNat NzNat NzNat NzNat NzNat KeyAccessDistr -> Config .
+  op $init : NzNat NzNat NzNat NzNat NzNat NzNat NzNat NzNat KeyVars KeyVars NzNat NzNat NzNat KeyAccessDistr Config -> Config .
+  op $$init : NzNat NzNat NzNat NzNat NzNat NzNat NzNat NzNat KeyVars KeyVars NzNat NzNat NzNat KeyAccessDistr Nat Config -> Config .
+  
+  
+  --- "keys" take the first KEYS of "keyList"
+  eq init(RTX,WTX,RWTX,CLS,DCS,REPLS,KEYS,ROPS,WOPS,RWOPS,KAD) 
+   = $init(RTX,WTX,RWTX,CLS,DCS,DCS,REPLS,CLS,kvars(KEYS,keyVars),kvars(KEYS,keyVars),ROPS,WOPS,RWOPS,KAD, 
+       < 0 . 1 : Table | table: initTable(kvars(KEYS,keyVars)), datacenter: empty, kvec: empty >) { 0.0 | nil } 
+	   < 0 . 2 : Monitor | log: noRecord, concurReads: empty > .
+  
+  op kvars : Nat KeyVars -> KeyVars .
+  eq kvars(s KEYS, (< K,VAR > ; KVARS)) = < K,VAR > ; kvars(KEYS,KVARS) .
+  eq kvars(0,KVARS) = noKeyVar .
+  eq kvars(KEYS,noKeyVar) = noKeyVar .
+  
+  --- initialize table with generated keys
+  op initTable : KeyVars -> ReplicaTable .
+  op $initTable : KeyVars ReplicaTable -> ReplicaTable .
+  eq initTable(KVARS) = $initTable(KVARS,[emptyTable]) .
+  eq $initTable((< K,VAR > ; KVARS),[KEYREPLICAS]) = $initTable(KVARS,[replicatingSites(K,emptyAddrList) ;; KEYREPLICAS]) .
+  eq $initTable(noKeyVar,[KEYREPLICAS]) = [KEYREPLICAS] .
+  
+  *** generate datacenters
+  eq $init(RTX,WTX,RWTX,CLS,s DCS,DCS',REPLS,CLS',KVARS,KVARS',ROPS,WOPS,RWOPS,KAD,C
+       < TB : Table | datacenter: DR, AS >) 
+   = $init(RTX,WTX,RWTX,CLS,DCS,DCS',REPLS,CLS',KVARS,KVARS',ROPS,WOPS,RWOPS,KAD,C
+       < TB : Table | datacenter: (DR ; dc(0 . 3 . (s DCS),empty)), AS >) .
+	   
+  *** generate replicas 
+  *** assign them to datacenters in round-robin way
+  eq $init(RTX,WTX,RWTX,CLS,0,DCS',s REPLS,CLS',KVARS,KVARS',ROPS,WOPS,RWOPS,KAD,C
+       < TB : Table | datacenter: DR, AS >)   
+   = $init(RTX,WTX,RWTX,CLS,0,DCS',REPLS,CLS',KVARS,KVARS',ROPS,WOPS,RWOPS,KAD,C
+       < TB : Table | datacenter: assignRepl(s REPLS,(s REPLS rem DCS' + 1),DR), AS >
+       < s REPLS : Replica | datastore: empty, latestCommit: empty >) .
+	   
+  op assignRepl : Nat Nat DcReplicas -> DcReplicas .
+  eq assignRepl(N,N',(DR ; dc(0 . 3 . N',ADDRSET))) = DR ; dc(0 . 3 . N',ADDRSET ; N) .
+
+  --- uniformly assign each key to a replica per datacenter
+  --- also updates Table with the key and its replica
+  eq $init(RTX,WTX,RWTX,CLS,0,DCS',0,CLS',(< K,VAR > ; KVARS),KVARS',ROPS,WOPS,RWOPS,KAD,
+       < TB : Table | datacenter: DR, AS > C) 
+   = $init(RTX,WTX,RWTX,CLS,0,DCS',0,CLS',KVARS,KVARS',ROPS,WOPS,RWOPS,KAD,
+       assignKey(K,dcList(DR),< TB : Table | datacenter: DR, AS > C)) .
+
+  op assignKey : Key ListOfDcReplicas Config -> Config .
+  op $assignKey : Key ListOfDcReplicas Config Address -> Config .
+  eq assignKey(K,(dcl(DC,ADDRLIST) ;; DRL),C)
+   = $assignKey(K,DRL,C,nth(sampleUniWithInt(size(ADDRLIST)) + 1,ADDRLIST)) .
+  eq $assignKey(K,DRL,< A : Replica | datastore: VS, AS > 
+                      < TB : Table | table: [replicatingSites(K,RIDS) ;; KEYREPLICAS], AS' > C,A)
+   = assignKey(K,DRL,< A : Replica | datastore: (VS,version(K,[0],eptTS,empty)), AS >  
+                     < TB : Table | table: [replicatingSites(K,RIDS ;; A) ;; KEYREPLICAS], AS' > C) .
+  eq assignKey(K,nil,C) = C .
+
+
+  --- generate clients
+  eq $init(RTX,WTX,RWTX,s CLS,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) 
+   = $init(RTX,WTX,RWTX,CLS,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C
+       < 1 . (s CLS) : Client | gotTxns: emptyTxnList, 
+                                executing: noActor, 
+                                committed: emptyTxnList,
+					            dc: 0 . 3 . (sampleUniWithInt(DCS') + 1) >)
+	   [sampleExp(10.0), 1 . (s CLS) <- start] .
+
+
+  --- generate txns
+  --- all 3 remaining
+  eq $init(s RTX,s WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C)
+   = $$init(s RTX,s WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,sampleUniWithInt(s RTX + s WTX + s RWTX),C) .
+
+  eq $$init(s RTX,s WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,R-OR-W-OR-RW,C) =
+       if R-OR-W-OR-RW < s RTX
+         then $init(RTX,s WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRTxn(1 . (sampleUniWithInt(CLS') + 1),ROPS,KVARS',KAD,C)) 
+         else if s RTX <= R-OR-W-OR-RW and R-OR-W-OR-RW < s RTX + s WTX
+                then $init(s RTX,WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addWTxn(1 . (sampleUniWithInt(CLS') + 1),WOPS,KVARS',KAD,C)) 
+                else $init(s RTX,s WTX,RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRWTxn(1 . (sampleUniWithInt(CLS') + 1),RWOPS,KVARS',KAD,C)) 
+              fi
+       fi . 
+
+  
+  --- ro and wo remaining
+  eq $init(s RTX,s WTX,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       if sampleUniWithInt(s RTX + s WTX) < s RTX
+         then $init(RTX,s WTX,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRTxn(1 . (sampleUniWithInt(CLS') + 1),ROPS,KVARS',KAD,C)) 
+         else $init(s RTX,WTX,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addWTxn(1 . (sampleUniWithInt(CLS') + 1),WOPS,KVARS',KAD,C)) 
+       fi .
+  
+  --- ro and rw remaining
+  eq $init(s RTX,0,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       if sampleUniWithInt(s RTX + s RWTX) < s RTX
+         then $init(RTX,0,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRTxn(1 . (sampleUniWithInt(CLS') + 1),ROPS,KVARS',KAD,C)) 
+         else $init(s RTX,0,RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRWTxn(1 . (sampleUniWithInt(CLS') + 1),RWOPS,KVARS',KAD,C)) 
+       fi .
+
+  --- wo and rw remaining
+  eq $init(0,s WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       if sampleUniWithInt(s WTX + s RWTX) < s WTX
+         then $init(0,WTX,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addWTxn(1 . (sampleUniWithInt(CLS') + 1),WOPS,KVARS',KAD,C)) 
+         else $init(0,s WTX,RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRWTxn(1 . (sampleUniWithInt(CLS') + 1),RWOPS,KVARS',KAD,C)) 
+       fi .
+
+  --- only ro remaining
+  eq $init(s RTX,0,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       $init(RTX,0,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRTxn(1 . (sampleUniWithInt(CLS') + 1),ROPS,KVARS',KAD,C)) . 
+
+  --- only wo remaining
+  eq $init(0,s WTX,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       $init(0,WTX,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addWTxn(1 . (sampleUniWithInt(CLS') + 1),WOPS,KVARS',KAD,C)) . 
+
+  --- only rw remaining
+  eq $init(0,0,s RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) =
+       $init(0,0,RWTX,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,addRWTxn(1 . (sampleUniWithInt(CLS') + 1),RWOPS,KVARS',KAD,C)) . 
+
+  op addRTxn : Address Nat KeyVars KeyAccessDistr Config -> Config .
+  op $addRTxn : Actor -> Actor .
+
+  op addWTxn : Address Nat KeyVars KeyAccessDistr Config -> Config .
+  op $addWTxn : Actor -> Actor .  
+  
+  op addRWTxn : Address Nat KeyVars KeyAccessDistr Config -> Config .
+  op $addRWTxn : Actor -> Actor .
+
+
+   --- if this is the first ro-txn to generate
+  eq addRTxn(A,ROPS,KVARS,KAD,< A : Client | gotTxns: emptyTxnList, AS > C) =
+       $addRTxn(< A : Client | gotTxns: < A . 1 : Txn | operations: addReads(A . 1,ROPS,KVARS,KAD), 
+                                                        readSet: empty, latest: empty, 
+                                                        localVars: empty, voteSites: noVS, 
+														1stGetSites: no1st, 2ndGetSites: no2nd, 
+														commitSites: noVS, txnSqn: -1.0	 >, AS >) C .
+
+   --- if there is already some txn(s) generated
+  eq addRTxn(A,ROPS,KVARS,KAD,< A : Client | gotTxns: (TXNS ;; < A . N : Txn | AS' >), AS > C) =
+        $addRTxn(< A : Client | gotTxns: (TXNS ;; < A . N : Txn | AS' > ;; 
+                                   < A . (N + 1) : Txn | operations: addReads(A . (N + 1),ROPS,KVARS,KAD), 
+                                                         readSet: empty, latest: empty, 
+                                                         localVars: empty, voteSites: noVS, 
+													 	 1stGetSites: no1st, 2ndGetSites: no2nd, 
+													     commitSites: noVS, txnSqn: -1.0 >), AS >) C .
+														 
+   --- update "localVars"
+   eq $addRTxn(< A : Client | gotTxns: (TXNS ;; < A . N : Txn | operations: OPS, 
+                                                                localVars: empty, AS' >), AS >) 
+    = < A : Client | gotTxns: (TXNS ;; < A . N : Txn | operations: OPS, 
+                                                       localVars: lvars(OPS), AS' >), AS > .
+  
+  
+  op lvars : OperationList -> LocalVars .
+  op $lvars : OperationList LocalVars -> LocalVars .
+  eq lvars(OPS) = $lvars(OPS,empty) .
+  eq $lvars(((OID VAR :=read K) OPS),VARS) = $lvars(OPS,insert(VAR,[0],VARS)) .
+  eq $lvars((write(OID,K,EXPR) OPS),VARS) = $lvars(OPS,VARS) .
+  eq $lvars(nil,VARS) = VARS .
+  
+  --- no repeated reads on the same key in a ro-txn
+  op addReads : Address Nat KeyVars KeyAccessDistr -> OperationList .
+  op $addReads : Address Nat KeyVars KeyAccessDistr OperationList -> OperationList .
+  --- "KeyVar"  records the generated key-var pair
+  op $$addReads : Address Nat KeyVars KeyAccessDistr OperationList KeyVar -> OperationList .
+
+  eq addReads(TID,ROPS,KVARS,KAD) = $addReads(TID,ROPS,KVARS,KAD,nil) .
+  eq $addReads(TID,s ROPS,KVARS,KAD,OPS) = 
+       if KAD == uniform 
+         then $$addReads(TID,ROPS,KVARS,KAD,OPS,nth(sampleUniWithInt(size(KVARS)) + 1,KVARS)) 
+         else if KAD == zipf
+		        then $$addReads(TID,ROPS,KVARS,KAD,OPS,nth(rat(sampleZipf(2.0,float(size(KVARS) + 1))),KVARS))  ---??? Zipf parameter
+				else $$addReads(TID,ROPS,KVARS,KAD,OPS,(if sampleBerWithP(0.8) 
+					          then nth(rat(floor(genRandom(1.0,(if size(KVARS) >= 5 then float(size(KVARS) / 5) else float(size(KVARS)) fi)))),KVARS) 
+							  else nth(rat(floor(genRandom(float(size(KVARS) / 5) + 1.0,float(size(KVARS))))),KVARS) fi))
+			  fi
+       fi .
+  eq $$addReads(TID,ROPS,KVARS,KAD,OPS,< K,VAR >) = $addReads(TID,ROPS,delete(< K,VAR >,KVARS),KAD,OPS ((TID . (s ROPS)) VAR :=read K)) .
+  eq $addReads(TID,0,KVARS,KAD,OPS) = OPS .
+  
+  
+  --- if this is the first wo-txn to generate
+  eq addWTxn(A,WOPS,KVARS,KAD,< A : Client | gotTxns: emptyTxnList, AS > C) =
+       $addWTxn(< A : Client | gotTxns: < A . 1 : Txn | operations: addWrites(A . 1,WOPS,KVARS,KAD), 
+                                                        readSet: empty, latest: empty, 
+                                                        localVars: empty, voteSites: noVS, 
+														1stGetSites: no1st, 2ndGetSites: no2nd, 
+														commitSites: noVS, txnSqn: -1.0	 >, AS >) C .
+
+
+  --- if there is already some txn(s) generated
+  eq addWTxn(A,WOPS,KVARS,KAD,< A : Client | gotTxns: (TXNS ;; < A . N : Txn | AS' >), AS > C) =
+        $addWTxn(< A : Client | gotTxns: (TXNS ;; < A . N : Txn | AS' > ;; 
+                                   < A . (N + 1) : Txn | operations: addWrites(A . (N + 1),WOPS,KVARS,KAD), 
+                                                         readSet: empty, latest: empty, 
+                                                         localVars: empty, voteSites: noVS, 
+													 	 1stGetSites: no1st, 2ndGetSites: no2nd, 
+													     commitSites: noVS, txnSqn: -1.0 >), AS >) C .
+
+  --- update "localVars"
+  ---!!! "lvars" does nothing with wo-txns
+  eq $addWTxn(< A : Client | gotTxns: (TXNS ;; < A . N : Txn | operations: OPS, 
+                                                               localVars: empty, AS' >), AS >)
+   = < A : Client | gotTxns: (TXNS ;; < A . N : Txn | operations: OPS, 
+                                                      localVars: lvars(OPS), AS' >), AS > .
+
+  --- no repeated writes on the same key in a wo-txn
+  op addWrites : Address Nat KeyVars KeyAccessDistr -> OperationList .
+  op $addWrites : Address Nat KeyVars KeyAccessDistr OperationList -> OperationList .
+  --- "KeyVar"  records the generated key-var pair
+  op $$addWrites : Address Nat KeyVars KeyAccessDistr OperationList KeyVar -> OperationList .
+  
+
+  eq addWrites(TID,WOPS,KVARS,KAD) = $addWrites(TID,WOPS,KVARS,KAD,nil) .
+  eq $addWrites(TID,s WOPS,KVARS,KAD,OPS) = 
+       if KAD == uniform 
+         then $$addWrites(TID,WOPS,KVARS,KAD,OPS,nth(sampleUniWithInt(size(KVARS)) + 1,KVARS)) 
+         else if KAD == zipf 
+		        then $$addWrites(TID,WOPS,KVARS,KAD,OPS,nth(rat(sampleZipf(2.0,float(size(KVARS) + 1))),KVARS)) 
+				else $$addWrites(TID,WOPS,KVARS,KAD,OPS,(if sampleBerWithP(0.8) 
+					          then nth(rat(floor(genRandom(1.0,(if size(KVARS) >= 5 then float(size(KVARS) / 5) else float(size(KVARS)) fi)))),KVARS) 
+							  else nth(rat(floor(genRandom(float(size(KVARS) / 5) + 1.0,float(size(KVARS))))),KVARS) fi))
+			  fi 
+       fi .
+  --- we probabilistically generate a written value: in this case, uniformly sampled on [1,1000]
+  eq $$addWrites(TID,WOPS,KVARS,KAD,OPS,< K,VAR >) = $addWrites(TID,WOPS,delete(< K,VAR >,KVARS),KAD,(OPS write((TID . (s WOPS)),K,(floor(rrand * 1000) + 1)))) .
+  eq $addWrites(TID,0,KVARS,KAD,OPS) = OPS .
+  
+*** No need of RWTxns
+---(
+
+  --- if this is the first rw-txn to generate
+  eq addRWTxn(RID,ROPS,KVARS,KAD,< RID : Replica | gotTxns: emptyTxnList, AS > C) =
+       $addRWTxn(< RID : Replica | gotTxns: < RID . 1 : Txn | operations: addRWrites(ROPS,KVARS,KAD), 
+                                                              readSet: empty, latest: empty, 
+                                                              localVars: empty >, AS >) C .
+
+  --- if there is already some txn(s) generated
+  eq addRWTxn(RID,ROPS,KVARS,KAD,< RID : Replica | gotTxns: (TXNS ;; < RID . N : Txn | AS' >), AS > C) =
+       $addRWTxn(< RID : Replica | gotTxns: (TXNS ;; < RID . N : Txn | AS' > ;; 
+                                   < RID . (N + 1) : Txn | operations: addRWrites(ROPS,KVARS,KAD), readSet: empty,
+                                                           latest: empty, localVars: empty >), AS >) C .  
+
+  --- update "localVars"
+  eq $addRWTxn(< RID : Replica | gotTxns: (TXNS ;; < RID . N : Txn | operations: OPS, 
+                                                                     readSet: empty, latest: empty, 
+                                                                     localVars: empty >), AS >) =
+       < RID : Replica | gotTxns: (TXNS ;; < RID . N : Txn | operations: OPS, 
+                                                             readSet: empty, latest: empty, 
+                                                             localVars: lvars(OPS) >), AS > . 
+
+  --- no repeated reads/writes on the same key in a rw-txn
+  op addRWrites : Nat KeyVars KeyAccessDistr -> OperationList .
+  op $addRWrites : Nat KeyVars KeyAccessDistr OperationList -> OperationList .
+  --- "KeyVar"  records the generated key-var pair
+  op $$addRWrites : Nat KeyVars KeyAccessDistr OperationList KeyVar -> OperationList .
+
+  eq addRWrites(ROPS,KVARS,KAD) = $addRWrites(ROPS,KVARS,KAD,nil) .
+  ---??? the style of generated rw-txns is: r(x) w(x) r(y) w(y)
+  ---??? so, two consecutive read and write ops on the same key
+  ---??? also, we simply restrict the number of ops in a rw-txn is even
+  eq $addRWrites(s s ROPS,KVARS,KAD,OPS) = 
+       if KAD == uniform 
+         then $$addRWrites(ROPS,KVARS,KAD,OPS,nth(sampleUniWithInt(size(KVARS)) + 1,KVARS)) 
+         else $$addRWrites(ROPS,KVARS,KAD,OPS,nth(rat(sampleZipf(2.0,float(size(KVARS) + 1))),KVARS)) 
+       fi .
+  --- we probabilistically generate a written value: in this case, uniformly sampled on [1,1000]
+  eq $$addRWrites(ROPS,KVARS,KAD,OPS,< K,VAR >) = $addRWrites(ROPS,delete(< K,VAR >,KVARS),KAD,(OPS (VAR :=read K) write(K,(floor(rrand * 1000) + 1)))) .
+  eq $addRWrites(0,KVARS,KAD,OPS) = OPS .
+)
+
+  --- when all txns have been generated
+  eq $init(0,0,0,0,0,DCS',0,CLS',noKeyVar,KVARS',ROPS,WOPS,RWOPS,KAD,C) = C . 
+endm
+
+---set clear rules off .
+---init(RTX,WTX,RWTX,REPLS,KEYS,ROPS,WOPS,RWOPS,KAD) 
+---rewrite init(0,0,4,2,3,2,2,4,uniform) .
+

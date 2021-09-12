@@ -1,0 +1,186 @@
+set show advisories off .
+
+(fmod MAP{X :: TRIV, Y :: TRIV} is
+  protecting BOOL .
+  sorts Entry{X,Y} Map{X,Y} .
+  subsort Entry{X,Y} < Map{X,Y} .
+  
+  op _|->_ : X$Elt Y$Elt -> Entry{X,Y} [ctor] .
+  op empty : -> Map{X,Y} [ctor] .
+  op _`,_ : Map{X,Y} Map{X,Y} -> Map{X,Y} [ctor assoc comm id: empty prec 121 format (d r os d)] .
+  
+  var D : X$Elt .
+  var R : Y$Elt .
+  var R' : Y$Elt .
+  var M : Map{X,Y} .
+  
+  op insert : X$Elt Y$Elt Map{X,Y} -> Map{X,Y} .
+  eq insert(D, R, (M, D |-> R'))
+   = if $hasMapping(M, D)
+       then insert(D, R, M)
+       else (M, D |-> R)
+     fi .
+  eq insert(D, R, M) = (M, D |-> R) [owise] .
+
+  op $hasMapping : Map{X,Y} X$Elt -> Bool .
+  eq $hasMapping((M, D |-> R), D) = true .
+  eq $hasMapping(M, D) = false [owise] .
+  
+  op _`[_`] : Map{X,Y} X$Elt -> Y$Elt [prec 23] .
+  eq (M, D |-> R)[D] = R .
+
+endfm)
+
+(fmod TERM-ORDER{X :: TRIV} is
+  pr EXT-BOOL + CONVERSION + META-LEVEL .
+
+  vars E F : [X$Elt] .
+  vars Q P : Qid .
+  vars A B : NeTermList .
+  vars C D : TermList .
+  vars T U : Term .
+
+  op lt : [X$Elt] [X$Elt] -> Bool .
+  eq lt(E, F) = $lt(upTerm(E), upTerm(F)) .
+  
+  op $lt : TermList TermList -> Bool .
+  eq $lt(Q, P) = string(Q) < string(P) .
+  eq $lt(Q[A], P) = $lt(Q, P) .
+  eq $lt(Q, P[B]) = $lt(Q, P) or-else Q == P .
+  eq $lt(Q[A], P[B]) = if Q == P then $lt(A, B) else $lt(Q, P) fi .
+  eq $lt(empty, B) = true .
+  eq $lt(C, empty) = false .
+  eq $lt((T, C), (U, D)) = if T == U then $lt(C, D) else $lt(T, U) fi .
+endfm)
+
+(fmod CONFIG is
+  pr FLOAT .
+
+  sorts Object Msg Config .
+  sorts DMsg DMsgs DTask Msgs Objects .
+  subsort Msg < Msgs .
+  subsort Object < Objects .
+  subsort DMsg < DMsgs .
+  subsorts DMsgs DTask Msgs Objects < Config .
+  
+  sorts ObjType Attribute Attributes .
+  subsort Attribute < Attributes .  
+  
+  sorts Oid Payload .
+ 
+  *** Config:
+  op null : -> DMsgs . 
+  op __ : Config Config -> Config [assoc comm id: null] .
+
+  op __ : Msgs Msgs -> Msgs [assoc comm id: null] .
+  op __ : Objects Objects -> Objects [assoc comm id: null] .
+  op __ : DMsgs DMsgs -> DMsgs [assoc comm id: null] .
+  
+  op `{_|_`} : Config Float -> Config [format (n d d n d d)] .
+	
+  *** Msgs:
+  op to_from_:_ : Oid Oid Payload -> Msg .
+  op to_:_      : Oid Payload     -> Msg .
+  
+  op `[_`,_`] : Float Msg -> DMsg . 
+    
+  *** Actor:
+  op <_:_|_> : Oid ObjType Attributes -> Object [format (ni d d d d d d d)] .
+  
+  *** Attributes:
+  op mt : -> Attributes .
+  op _`,_ : Attributes Attributes -> Attributes [assoc comm id: mt] .
+
+
+
+  
+  
+
+endfm)
+
+
+
+
+(view Msg from TRIV to CONFIG is sort Elt to Msg . endv)
+
+(fmod SORTING is
+  pr CONFIG + TERM-ORDER{Msg} .
+  
+  *** MsgList:
+  sort MsgList .
+  subsort Msg < MsgList < Config .
+  
+  op nil : -> MsgList .
+  op _::_ : MsgList MsgList -> MsgList [assoc id: nil] . 
+
+  vars M M' : Msg .  var MS : Config .  var ML : MsgList .  
+  
+  op sort : Config -> MsgList .
+  op sort : Config MsgList -> MsgList .
+  eq sort(MS) = sort(MS,nil) .
+  eq sort((M MS),ML) = sort(MS,insert(M,ML)) .
+  eq sort(null,ML) = ML .
+  
+  op insert : Msg MsgList -> MsgList .
+  eq insert(M,(M' :: ML))
+   = if lt(M,M') then M :: M' :: ML
+       else M' :: insert(M,ML) fi .
+  eq insert(M,nil) = M .  
+endfm)
+
+(mod INIT-HANDLER is
+  inc SORTING .
+  
+  var OBJS : Objects .  var MSGS : Msgs .
+  var T : Float .  var C : Config .  
+  var M : Msg .  var ML : MsgList .
+
+  op init : Config -> Config .
+  eq init(OBJS MSGS) = { OBJS delay-init(OBJS,MSGS,sort(MSGS)) | 0.0 } .
+  
+  op delay-init : Objects Msgs MsgList -> DTask .
+endm)
+
+
+(mod SCHEDULING is
+  inc INIT-HANDLER  .
+  
+  var OBJ : Object .  var OBJS : Objects .  
+  var DMS : DMsgs .  vars T T' : Float .  
+  var MSG : Msg .  var DMSGS : Config .
+  
+ crl [tick] : 
+     { OBJS DMS [T', MSG] | T }
+  => 
+     { OBJS DMS MSG | T' } 
+	 if (not objectEnabled(OBJS)) /\ (T' <= times(DMS)) .
+	 
+  op objectEnabled : Objects -> Bool .
+  eq objectEnabled(OBJ OBJS) = objectEnabled(OBJ) or objectEnabled(OBJS) .
+  eq objectEnabled(OBJ) = false [owise] .
+
+  op times : Config -> Float .
+  op times : Config Float -> Float .
+  eq times(DMSGS) = times(DMSGS,Infinity) .
+  eq times(([T,MSG] DMSGS),T') = times(DMSGS,min(T,T')) .
+  eq times(null,T') = T' .
+endm)
+
+(mod INTERFACE is
+  pr SCHEDULING .
+
+  *** Operations supported by PVeStA
+  op initState : -> Config .
+  op sat : Nat Config -> Bool .
+  op val : Nat Config -> Float .
+  op tick : Config -> Config .
+  op getTime : Config -> Float .
+  op limit : -> Float .
+
+
+
+  var C : Config .  var T : Float .
+
+  eq tick(C) = C .
+  eq getTime({ C | T }) = T .
+endm)

@@ -1,0 +1,226 @@
+load initial-states
+
+mod RAMP-SNOW-ANALYSIS is
+  including INITIAL-STATES .
+  including APMAUDE .
+  including MODEL-CHECKER .
+  including RAMP-F .
+
+  subsort Config < State .
+
+  eq LIMIT = 1.0e+100 .
+
+  op initConfig : -> Config .
+  eq initConfig = run(initState,LIMIT) .
+
+  ops x y z : -> Key .
+  ops tb r1 r2 r3 t1 t2 t3 t4 d1 d2 d3 m : -> Address .
+  ops xl yl zl : -> LocalVar .
+
+  *** non-replicated setting: DCS is fixed as 1
+  --- init(RTX,WTX,RWTX,CLS,DCS,REPLS,KEYS,ROPS,WOPS,RWOPS,KAD) 
+  eq initState = init(20,180,0,25,1,5,1000,2,2,0,uniform) .
+
+
+  ---(
+  eq initState = { 0.0 | nil} < m : Monitor | log: noRecord > 
+                 < tb : Table | table: ([replicatingSites(x, 1 ;; 3) ;; replicatingSites(y, 2 ;; 4)]),
+                                datacenter: (dc(d1,1 ; 2) ; dc(d2,3 ; 4)) > 
+                 [ 1.0, 11 <- start ] [ 2.0, 12 <- start ]
+	 < 11 : Client | gotTxns: < 11 . 1 : Txn | operations: ((11 . 1 . 1 xl :=read x) (11 . 1 . 2 yl :=read y)), readSet: empty, 
+                                               latest: empty, localVars: (xl |-> [0], yl |-> [0]),
+  					                           voteSites: noVS, 1stGetSites: no1st,
+  					                           2ndGetSites: no2nd, commitSites: noVS,
+											   txnSqn: -1.0 >, 
+                        
+                     executing: noActor, 
+                     committed: emptyTxnList,
+					 dc: d1 >
+	 < 12 : Client | gotTxns: < 12 . 1 : Txn | operations: (write(12 . 1 . 1,x,1) write(12 . 1 . 2,y,1)), readSet: empty, 
+                                               latest: empty, localVars: (xl |-> [0], yl |-> [0]),
+					                           voteSites: noVS, 1stGetSites: no1st,
+					                           2ndGetSites: no2nd, commitSites: noVS,
+											   txnSqn: -1.0 >, 
+                     executing: noActor, 
+                     committed: emptyTxnList,
+					 dc: d2 >
+					   
+     < 1 : Replica | datastore: version(x,[0],eptTS,empty), latestCommit: empty > 
+     < 2 : Replica | datastore: version(y,[0],eptTS,empty), latestCommit: empty >
+     < 3 : Replica | datastore: version(x,[0],eptTS,empty), latestCommit: empty >
+     < 4 : Replica | datastore: version(y,[0],eptTS,empty), latestCommit: empty > .
+  )
+
+  --- Metrics
+  vars T T' T1 T2 T1' T2' NUMBER : Float .
+  var C : Config .
+  vars M TID TID' : Address .
+  vars RECORD RECORD' RECORD'' : Record . 
+  vars READS READS' WRITES WRITES' VS VS' : Versions .
+  var FLAG : Bool .
+  vars TS TS' TS1 TS2 TS1' TS2' : Timestamp .
+  vars MD MD' MD1 MD2 MD1' MD2' : KeySet .
+  vars V V' V1 V2 V1' V2' : Value .
+  vars K K1 K2 : Key .
+  vars TIDS TIDS' : AddressSet .
+  var AS : AttributeSet .
+
+  --- Throughput
+  op totalRunTime : Record -> Float .
+  op trt : Record Float -> Float .
+  eq totalRunTime(RECORD) = trt(RECORD,0.0) .
+  eq trt((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD),T) = 
+       if T2 > T
+         then trt(RECORD,T2)
+         else trt(RECORD,T)
+       fi .
+  eq trt(noRecord,T) = T .
+         
+  op throughput : Config -> Float .
+  eq throughput(< M : Monitor | log: RECORD, AS > C) = committedNumber(RECORD) / totalRunTime(RECORD) .
+
+  op committedNumber : Record -> Float .
+  op $committedNumber : Record Float -> Float .
+  eq committedNumber(RECORD) = $committedNumber(RECORD,0.0) .
+  eq $committedNumber((record(TID,T1,T2,READS,WRITES,true) ; RECORD),NUMBER) = 
+       $committedNumber(RECORD,NUMBER + 1.0) .
+  eq $committedNumber((record(TID,T1,T2,READS,WRITES,false) ; RECORD),NUMBER) = 
+       $committedNumber(RECORD,NUMBER) .
+  eq $committedNumber(noRecord,NUMBER) = NUMBER .
+
+  --- Commit Rate
+  op commitRate : Config -> Float .
+  eq commitRate(< M : Monitor | log: RECORD, AS > C) = committedNumber(RECORD) / totalNumber(RECORD) .
+
+  op totalNumber : Record -> Float .
+  op $totalNumber : Record Float -> Float .
+  eq totalNumber(RECORD) = $totalNumber(RECORD,0.0) .
+  eq $totalNumber((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD),NUMBER) = 
+       $totalNumber(RECORD,NUMBER + 1.0) .
+  eq $totalNumber(noRecord,NUMBER) = NUMBER .  
+
+  --- Avg Latency
+  op avgLatency : Config -> Float .
+  eq avgLatency(< M : Monitor | log: RECORD, AS > C) = totalLatency(RECORD) / committedNumber(RECORD) .
+  
+  op totalLatency : Record -> Float .
+  op $totalLatency : Record Float -> Float .
+  eq totalLatency(RECORD) = $totalLatency(RECORD,0.0) .
+  eq $totalLatency((record(TID,T1,T2,READS,WRITES,true) ; RECORD),NUMBER) =
+       $totalLatency(RECORD,NUMBER + T2 - T1) .
+  eq $totalLatency((record(TID,T1,T2,READS,WRITES,false) ; RECORD),NUMBER) = 
+       $totalLatency(RECORD,NUMBER) .
+  eq $totalLatency(noRecord,NUMBER) = NUMBER .
+  
+  *** 
+  op pf : Config -> Float .
+  eq pf(< M : Monitor | log: RECORD, AS > C) = freshReads(RECORD) / totalReads(RECORD) .
+  
+  op totalReads : Record -> Float .
+ ceq totalReads((record(TID,T1,T2,READS,WRITES,true) ; RECORD))
+   = totalReads(RECORD) + 1.0
+  if READS =/= empty .
+  eq totalReads((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD)) = totalReads(RECORD) [owise] .
+  eq totalReads(noRecord) = 0.0 .
+  
+  ---(
+  op freshReads : Record -> Float .
+  op $freshReads : Record Record Float -> Float .
+  eq freshReads(RECORD) = $freshReads(RECORD,RECORD,0.0) .
+ ceq $freshReads((record(TID,T1,T2,READS,WRITES,true) ; RECORD),
+                 (record(TID',T1',T2',READS',READS,true) ; RECORD'), NUMBER) 
+   = $freshReads(RECORD,(record(TID',T1',T2',READS',READS,true) ; RECORD'), 
+                 NUMBER + 1.0) 
+  if T1' < T1 and noWriteBetween(T1',T1,READS,RECORD') and READS =/= empty .
+  
+ ceq $freshReads((record(TID,T1,T2,(version(K,[0],ts(0,0.0),empty),READS),WRITES,true) ; RECORD),RECORD', NUMBER) 
+   = $freshReads(RECORD,RECORD', NUMBER + 1.0)
+  if noWriteBetween(0.0,T1,(version(K,[0],ts(0,0.0),empty),READS),RECORD') .
+  
+  eq $freshReads((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD), RECORD', NUMBER) 
+   = $freshReads(RECORD, RECORD', NUMBER) [owise] . 
+  eq $freshReads(noRecord, RECORD', NUMBER) = NUMBER .
+  
+  op noWriteBetween : Float Float Versions Record -> Bool .
+ ceq noWriteBetween(T,T',(version(K,V,TS,MD),VS),(record(TID,T1,T2,READS,(version(K,V',TS',MD'),VS'),true) ; RECORD))
+   = false if T < T1 and T1 < T' .
+  eq noWriteBetween(T,T',VS,RECORD) = true [owise] .
+  )
+  
+
+  op freshReads : Record -> Float .
+  op $freshReads : Record Record Float -> Float .
+  eq freshReads(RECORD) = $freshReads(RECORD,RECORD,0.0) .
+
+ ceq $freshReads((record(TID,T1,T2,(READS,version(K,V,TS,MD)),WRITES,true) ; RECORD),
+                 (record(TID',T1',T2',READS',(WRITES',version(K,V,TS',MD')),true) ; RECORD'), NUMBER) 
+   = $freshReads(RECORD,(record(TID',T1',T2',READS',(WRITES',version(K,V,TS',MD')),true) ; RECORD'), 
+                 NUMBER + 1.0) 
+  if T1' < T1 and noWriteBetween(T1',T1,K,RECORD') .
+  
+ ceq $freshReads((record(TID,T1,T2,(version(K,[0],ts(0,0.0),empty),READS),WRITES,true) ; RECORD),RECORD', NUMBER) 
+   = $freshReads(RECORD,RECORD', NUMBER + 1.0)
+  if noWriteBetween(0.0,T1,K,RECORD') .  
+  
+  eq $freshReads((record(TID,T1,T2,READS,WRITES,FLAG) ; RECORD), RECORD', NUMBER) 
+   = $freshReads(RECORD, RECORD', NUMBER) [owise] .    
+  eq $freshReads(noRecord, RECORD', NUMBER) = NUMBER .  
+  
+
+  op noWriteBetween : Float Float Key Record -> Bool .
+ ceq noWriteBetween(T,T',K,(record(TID,T1,T2,READS,(version(K,V,TS,MD),VS),true) ; RECORD))
+   = false if T < T1 and T1 < T' .
+  eq noWriteBetween(T,T',K,RECORD) = true [owise] .  
+  
+  
+  *** concurrent reads
+  *** assume txns are always committed; owise, need to match TID and "true" TID in LOG
+  op cr : Config -> Float .
+  eq cr(< M : Monitor | concurReads: TIDS, log: RECORD, AS > C) = numberOfDiff(TIDS) / totalReads(RECORD) .
+  
+  op diff : AddressSet -> AddressSet .
+  eq diff(TID ; TID ; TIDS) = diff(TID ; TIDS) .
+  eq diff(TIDS) = TIDS [owise] .
+  
+  op numberOfDiff : AddressSet -> Float .
+  op $numberOfDiff : AddressSet -> Float .  
+  eq numberOfDiff(TIDS) = $numberOfDiff(diff(TIDS)) .
+  eq $numberOfDiff(TID ; TIDS) = 1.0 + $numberOfDiff(TIDS) .
+  eq $numberOfDiff(empty) = 0.0 .
+
+  op isCr : Config -> Float .
+  eq isCr(< M : Monitor | concurReads: TIDS, AS > C) 
+   = if numberOfDiff(TIDS) > 0.0 then 1.0 else 0.0 fi .
+
+    
+*** ryw; ryw vs pf vs cr
+*** read latency
+
+
+  *** read atomicity
+  op ra : Config -> Float .
+  op ra : Record -> Float .
+  eq ra(< M : Monitor | log: RECORD, AS > C) = ra(RECORD) .
+ ceq ra(RECORD ; record(TID,T1,T2,(version(K1,V1,TS1,MD1),version(K2,V2,TS2,MD2),READS),WRITES,true) ; RECORD' ;
+          record(TID',T1',T2',READS',(version(K1,V1,TS1,MD1),version(K2,V2',TS2',MD2'),WRITES'),true) ; RECORD'') = 0.0 
+	 if TS2 less-than TS2' .
+ ceq ra(RECORD ; record(TID',T1',T2',READS',(version(K1,V1,TS1,MD1),version(K2,V2',TS2',MD2'),WRITES'),true) ; RECORD' ;
+          record(TID,T1,T2,(version(K1,V1,TS1,MD1),version(K2,V2,TS2,MD2),READS),WRITES,true) ; RECORD'') = 0.0 
+	 if TS2 less-than TS2' . 
+  eq ra(RECORD) = 1.0 [owise] .
+
+
+  --- PVESTA interfaces
+  eq val(0,C) = throughput(C) .
+  eq val(1,C) = avgLatency(C) .
+  eq val(2,C) = commitRate(C) .
+  eq val(3,C) = pf(C) .
+  eq val(4,C) = cr(C) .
+  eq val(5,C) = isCr(C) .
+  eq val(6,C) = ra(C) .
+        
+endm
+
+set clear rules off .
+---rewrite initConfig .
+rew pf(initConfig) .

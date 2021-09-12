@@ -1,0 +1,89 @@
+---load ramp-f
+---load ramp-s
+load rola
+
+mod INIT-SERVER is
+  inc RAMP-F .
+  inc SHIM-DYNAMIC .
+
+  var AS : AttributeSet .
+  vars O O' : Oid .
+  vars N' N : Nat .
+  vars STR KV : String .
+  var STORE : Versions .
+  var LC : KeyTimestamps .
+
+---(
+ *** load
+  crl < O : Replica | datastore : STORE, latestCommit : LC, AS >
+      [KV,O']
+    =>
+      < O : Replica | datastore : addKeyValue(KV,STORE),
+                      latestCommit : addKeyTS(KV,LC), AS >
+      if N := find(KV,"[eov]",0) .
+
+  op addKeyValue : String Versions -> Versions .
+ ceq addKeyValue(KV,STORE) = addKeyValue(substr(STR,N' + 5,length(STR)),
+       (version(substr(KV,0,N),substr(STR,0,N'),ts(dftOid,0),empty),STORE))
+     if N := find(KV, "[eok]", 0) /\
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+  eq addKeyValue("",STORE) = STORE .
+
+  op addKeyTS : String KeyTimestamps -> KeyTimestamps .
+ ceq addKeyTS(KV,LC) = addKeyTS(substr(STR,N' + 5,length(STR)), 
+       insert(substr(KV,0,N),ts(dftOid,0),LC)) 
+     if N := find(KV, "[eok]", 0) /\
+        STR := substr(KV, N + 5, length(KV)) /\
+        N' := find(STR, "[eov]", 0) .
+  eq addKeyTS("",LC) = LC .
+)
+
+  *** eq port = 9910 .  *** the base port for server talking to server
+  eq backLog = 1 .  *** the BACKLOG parameter on the server side
+  op self : -> String .
+
+  op initDatastore : -> Versions .
+  op initLatestCommit : -> KeyTimestamps .
+  
+  ***START AUTOMATICALLY GENERATED PARAMETER CODE***
+  eq self = "10.10.1.5" .
+  eq numberOfServerSockets = 5 . *** one for load, one(s) for client(s)
+  
+  eq initDatastore = ( version("261","df", ts(dftOid,0),empty)  version("442","df", ts(dftOid,0),empty)  version("513","df", ts(dftOid,0),empty)  version("289","df", ts(dftOid,0),empty)  version("614","df", ts(dftOid,0),empty)  version("801","df", ts(dftOid,0),empty)  version("300","df", ts(dftOid,0),empty)  version("350","df", ts(dftOid,0),empty)  version("957","df", ts(dftOid,0),empty)  version("874","df", ts(dftOid,0),empty)  version("695","df", ts(dftOid,0),empty)  version("320","df", ts(dftOid,0),empty)  version("645","df", ts(dftOid,0),empty)  version("210","df", ts(dftOid,0),empty)  version("919","df", ts(dftOid,0),empty)  version("250","df", ts(dftOid,0),empty)  version("455","df", ts(dftOid,0),empty)  version("858","df", ts(dftOid,0),empty)  version("973","df", ts(dftOid,0),empty)  version("753","df", ts(dftOid,0),empty)  version("567","df", ts(dftOid,0),empty)  version("961","df", ts(dftOid,0),empty)  version("662","df", ts(dftOid,0),empty)  version("226","df", ts(dftOid,0),empty)  version("416","df", ts(dftOid,0),empty)  version("321","df", ts(dftOid,0),empty)  version("463","df", ts(dftOid,0),empty)  version("324","df", ts(dftOid,0),empty)  version("342","df", ts(dftOid,0),empty)  version("278","df", ts(dftOid,0),empty)  version("882","df", ts(dftOid,0),empty)  version("147","df", ts(dftOid,0),empty)  version("517","df", ts(dftOid,0),empty)  version("170","df", ts(dftOid,0),empty)  version("541","df", ts(dftOid,0),empty)  version("325","df", ts(dftOid,0),empty)  version("487","df", ts(dftOid,0),empty)  version("424","df", ts(dftOid,0),empty)  version("556","df", ts(dftOid,0),empty)  version("236","df", ts(dftOid,0),empty)  version("75","df", ts(dftOid,0),empty)  version("890","df", ts(dftOid,0),empty)  version("295","df", ts(dftOid,0),empty)  version("91","df", ts(dftOid,0),empty)  version("955","df", ts(dftOid,0),empty)  version("59","df", ts(dftOid,0),empty)  version("762","df", ts(dftOid,0),empty)  version("386","df", ts(dftOid,0),empty)  version("742","df", ts(dftOid,0),empty)  version("239","df", ts(dftOid,0),empty)  version("251","df", ts(dftOid,0),empty)  version("624","df", ts(dftOid,0),empty)  version("51","df", ts(dftOid,0),empty)  version("498","df", ts(dftOid,0),empty)  version("184","df", ts(dftOid,0),empty)  version("632","df", ts(dftOid,0),empty)  version("644","df", ts(dftOid,0),empty)  version("430","df", ts(dftOid,0),empty)  version("577","df", ts(dftOid,0),empty)  version("358","df", ts(dftOid,0),empty)  version("287","df", ts(dftOid,0),empty)  version("110","df", ts(dftOid,0),empty)  version("153","df", ts(dftOid,0),empty)  version("884","df", ts(dftOid,0),empty)  version("125","df", ts(dftOid,0),empty)  version("996","df", ts(dftOid,0),empty)  version("853","df", ts(dftOid,0),empty)  version("24","df", ts(dftOid,0),empty)  version("211","df", ts(dftOid,0),empty)  version("718","df", ts(dftOid,0),empty)  version("503","df", ts(dftOid,0),empty)  version("385","df", ts(dftOid,0),empty)  version("100","df", ts(dftOid,0),empty)  version("531","df", ts(dftOid,0),empty)  version("579","df", ts(dftOid,0),empty)  version("756","df", ts(dftOid,0),empty)  version("474","df", ts(dftOid,0),empty)  version("575","df", ts(dftOid,0),empty)  version("402","df", ts(dftOid,0),empty)  version("492","df", ts(dftOid,0),empty)  version("313","df", ts(dftOid,0),empty)  version("757","df", ts(dftOid,0),empty)  version("670","df", ts(dftOid,0),empty)  version("915","df", ts(dftOid,0),empty)  version("715","df", ts(dftOid,0),empty)  version("814","df", ts(dftOid,0),empty)  version("898","df", ts(dftOid,0),empty)  version("743","df", ts(dftOid,0),empty)  version("908","df", ts(dftOid,0),empty)  version("549","df", ts(dftOid,0),empty)  version("490","df", ts(dftOid,0),empty)  version("943","df", ts(dftOid,0),empty)  version("949","df", ts(dftOid,0),empty)  version("522","df", ts(dftOid,0),empty)  version("851","df", ts(dftOid,0),empty)  version("835","df", ts(dftOid,0),empty)  version("462","df", ts(dftOid,0),empty)  version("283","df", ts(dftOid,0),empty)  version("798","df", ts(dftOid,0),empty)  version("879","df", ts(dftOid,0),empty)  version("482","df", ts(dftOid,0),empty)  version("741","df", ts(dftOid,0),empty)  version("449","df", ts(dftOid,0),empty)  version("94","df", ts(dftOid,0),empty)  version("680","df", ts(dftOid,0),empty)  version("519","df", ts(dftOid,0),empty)  version("870","df", ts(dftOid,0),empty)  version("380","df", ts(dftOid,0),empty)  version("976","df", ts(dftOid,0),empty)  version("390","df", ts(dftOid,0),empty)  version("356","df", ts(dftOid,0),empty)  version("823","df", ts(dftOid,0),empty)  version("122","df", ts(dftOid,0),empty)  version("82","df", ts(dftOid,0),empty)  version("622","df", ts(dftOid,0),empty)  version("629","df", ts(dftOid,0),empty)  version("931","df", ts(dftOid,0),empty)  version("95","df", ts(dftOid,0),empty)  version("819","df", ts(dftOid,0),empty)  version("816","df", ts(dftOid,0),empty)  version("54","df", ts(dftOid,0),empty)  version("282","df", ts(dftOid,0),empty)  version("158","df", ts(dftOid,0),empty)  version("623","df", ts(dftOid,0),empty)  version("615","df", ts(dftOid,0),empty)  version("17","df", ts(dftOid,0),empty)  version("580","df", ts(dftOid,0),empty)  version("897","df", ts(dftOid,0),empty)  version("591","df", ts(dftOid,0),empty)  version("301","df", ts(dftOid,0),empty)  version("528","df", ts(dftOid,0),empty)  version("811","df", ts(dftOid,0),empty)  version("946","df", ts(dftOid,0),empty)  version("169","df", ts(dftOid,0),empty)  version("436","df", ts(dftOid,0),empty)  version("999","df", ts(dftOid,0),empty)  version("208","df", ts(dftOid,0),empty)  version("774","df", ts(dftOid,0),empty)  version("435","df", ts(dftOid,0),empty)  version("697","df", ts(dftOid,0),empty)  version("980","df", ts(dftOid,0),empty)  version("412","df", ts(dftOid,0),empty)  version("880","df", ts(dftOid,0),empty)  version("827","df", ts(dftOid,0),empty)  version("672","df", ts(dftOid,0),empty)  version("92","df", ts(dftOid,0),empty)  version("296","df", ts(dftOid,0),empty)  version("392","df", ts(dftOid,0),empty)  version("316","df", ts(dftOid,0),empty)  version("565","df", ts(dftOid,0),empty)  version("554","df", ts(dftOid,0),empty)  version("526","df", ts(dftOid,0),empty)  version("234","df", ts(dftOid,0),empty)  version("408","df", ts(dftOid,0),empty)  version("404","df", ts(dftOid,0),empty)  version("525","df", ts(dftOid,0),empty)  version("80","df", ts(dftOid,0),empty)  version("149","df", ts(dftOid,0),empty)  version("570","df", ts(dftOid,0),empty)  version("881","df", ts(dftOid,0),empty)  version("458","df", ts(dftOid,0),empty)  version("227","df", ts(dftOid,0),empty)  version("542","df", ts(dftOid,0),empty)  version("480","df", ts(dftOid,0),empty)  version("225","df", ts(dftOid,0),empty)  version("710","df", ts(dftOid,0),empty)  version("70","df", ts(dftOid,0),empty)  version("315","df", ts(dftOid,0),empty)  version("360","df", ts(dftOid,0),empty)  version("648","df", ts(dftOid,0),empty)  version("189","df", ts(dftOid,0),empty)  version("81","df", ts(dftOid,0),empty)  version("53","df", ts(dftOid,0),empty)  version("388","df", ts(dftOid,0),empty)  version("124","df", ts(dftOid,0),empty)  version("781","df", ts(dftOid,0),empty)  version("792","df", ts(dftOid,0),empty)  version("15","df", ts(dftOid,0),empty)  version("603","df", ts(dftOid,0),empty)  version("77","df", ts(dftOid,0),empty)  version("979","df", ts(dftOid,0),empty)  version("496","df", ts(dftOid,0),empty)  version("892","df", ts(dftOid,0),empty)  version("292","df", ts(dftOid,0),empty)  version("242","df", ts(dftOid,0),empty)  version("808","df", ts(dftOid,0),empty)  version("848","df", ts(dftOid,0),empty)  version("8","df", ts(dftOid,0),empty)  version("420","df", ts(dftOid,0),empty)  version("970","df", ts(dftOid,0),empty)  version("854","df", ts(dftOid,0),empty)  version("306","df", ts(dftOid,0),empty)  version("111","df", ts(dftOid,0),empty)  version("119","df", ts(dftOid,0),empty)  version("161","df", ts(dftOid,0),empty)  version("410","df", ts(dftOid,0),empty)  version("989","df", ts(dftOid,0),empty)  version("258","df", ts(dftOid,0),empty)  version("676","df", ts(dftOid,0),empty) ) .
+  eq initLatestCommit = ( "261" |-> ts(dftOid,0),  "442" |-> ts(dftOid,0),  "513" |-> ts(dftOid,0),  "289" |-> ts(dftOid,0),  "614" |-> ts(dftOid,0),  "801" |-> ts(dftOid,0),  "300" |-> ts(dftOid,0),  "350" |-> ts(dftOid,0),  "957" |-> ts(dftOid,0),  "874" |-> ts(dftOid,0),  "695" |-> ts(dftOid,0),  "320" |-> ts(dftOid,0),  "645" |-> ts(dftOid,0),  "210" |-> ts(dftOid,0),  "919" |-> ts(dftOid,0),  "250" |-> ts(dftOid,0),  "455" |-> ts(dftOid,0),  "858" |-> ts(dftOid,0),  "973" |-> ts(dftOid,0),  "753" |-> ts(dftOid,0),  "567" |-> ts(dftOid,0),  "961" |-> ts(dftOid,0),  "662" |-> ts(dftOid,0),  "226" |-> ts(dftOid,0),  "416" |-> ts(dftOid,0),  "321" |-> ts(dftOid,0),  "463" |-> ts(dftOid,0),  "324" |-> ts(dftOid,0),  "342" |-> ts(dftOid,0),  "278" |-> ts(dftOid,0),  "882" |-> ts(dftOid,0),  "147" |-> ts(dftOid,0),  "517" |-> ts(dftOid,0),  "170" |-> ts(dftOid,0),  "541" |-> ts(dftOid,0),  "325" |-> ts(dftOid,0),  "487" |-> ts(dftOid,0),  "424" |-> ts(dftOid,0),  "556" |-> ts(dftOid,0),  "236" |-> ts(dftOid,0),  "75" |-> ts(dftOid,0),  "890" |-> ts(dftOid,0),  "295" |-> ts(dftOid,0),  "91" |-> ts(dftOid,0),  "955" |-> ts(dftOid,0),  "59" |-> ts(dftOid,0),  "762" |-> ts(dftOid,0),  "386" |-> ts(dftOid,0),  "742" |-> ts(dftOid,0),  "239" |-> ts(dftOid,0),  "251" |-> ts(dftOid,0),  "624" |-> ts(dftOid,0),  "51" |-> ts(dftOid,0),  "498" |-> ts(dftOid,0),  "184" |-> ts(dftOid,0),  "632" |-> ts(dftOid,0),  "644" |-> ts(dftOid,0),  "430" |-> ts(dftOid,0),  "577" |-> ts(dftOid,0),  "358" |-> ts(dftOid,0),  "287" |-> ts(dftOid,0),  "110" |-> ts(dftOid,0),  "153" |-> ts(dftOid,0),  "884" |-> ts(dftOid,0),  "125" |-> ts(dftOid,0),  "996" |-> ts(dftOid,0),  "853" |-> ts(dftOid,0),  "24" |-> ts(dftOid,0),  "211" |-> ts(dftOid,0),  "718" |-> ts(dftOid,0),  "503" |-> ts(dftOid,0),  "385" |-> ts(dftOid,0),  "100" |-> ts(dftOid,0),  "531" |-> ts(dftOid,0),  "579" |-> ts(dftOid,0),  "756" |-> ts(dftOid,0),  "474" |-> ts(dftOid,0),  "575" |-> ts(dftOid,0),  "402" |-> ts(dftOid,0),  "492" |-> ts(dftOid,0),  "313" |-> ts(dftOid,0),  "757" |-> ts(dftOid,0),  "670" |-> ts(dftOid,0),  "915" |-> ts(dftOid,0),  "715" |-> ts(dftOid,0),  "814" |-> ts(dftOid,0),  "898" |-> ts(dftOid,0),  "743" |-> ts(dftOid,0),  "908" |-> ts(dftOid,0),  "549" |-> ts(dftOid,0),  "490" |-> ts(dftOid,0),  "943" |-> ts(dftOid,0),  "949" |-> ts(dftOid,0),  "522" |-> ts(dftOid,0),  "851" |-> ts(dftOid,0),  "835" |-> ts(dftOid,0),  "462" |-> ts(dftOid,0),  "283" |-> ts(dftOid,0),  "798" |-> ts(dftOid,0),  "879" |-> ts(dftOid,0),  "482" |-> ts(dftOid,0),  "741" |-> ts(dftOid,0),  "449" |-> ts(dftOid,0),  "94" |-> ts(dftOid,0),  "680" |-> ts(dftOid,0),  "519" |-> ts(dftOid,0),  "870" |-> ts(dftOid,0),  "380" |-> ts(dftOid,0),  "976" |-> ts(dftOid,0),  "390" |-> ts(dftOid,0),  "356" |-> ts(dftOid,0),  "823" |-> ts(dftOid,0),  "122" |-> ts(dftOid,0),  "82" |-> ts(dftOid,0),  "622" |-> ts(dftOid,0),  "629" |-> ts(dftOid,0),  "931" |-> ts(dftOid,0),  "95" |-> ts(dftOid,0),  "819" |-> ts(dftOid,0),  "816" |-> ts(dftOid,0),  "54" |-> ts(dftOid,0),  "282" |-> ts(dftOid,0),  "158" |-> ts(dftOid,0),  "623" |-> ts(dftOid,0),  "615" |-> ts(dftOid,0),  "17" |-> ts(dftOid,0),  "580" |-> ts(dftOid,0),  "897" |-> ts(dftOid,0),  "591" |-> ts(dftOid,0),  "301" |-> ts(dftOid,0),  "528" |-> ts(dftOid,0),  "811" |-> ts(dftOid,0),  "946" |-> ts(dftOid,0),  "169" |-> ts(dftOid,0),  "436" |-> ts(dftOid,0),  "999" |-> ts(dftOid,0),  "208" |-> ts(dftOid,0),  "774" |-> ts(dftOid,0),  "435" |-> ts(dftOid,0),  "697" |-> ts(dftOid,0),  "980" |-> ts(dftOid,0),  "412" |-> ts(dftOid,0),  "880" |-> ts(dftOid,0),  "827" |-> ts(dftOid,0),  "672" |-> ts(dftOid,0),  "92" |-> ts(dftOid,0),  "296" |-> ts(dftOid,0),  "392" |-> ts(dftOid,0),  "316" |-> ts(dftOid,0),  "565" |-> ts(dftOid,0),  "554" |-> ts(dftOid,0),  "526" |-> ts(dftOid,0),  "234" |-> ts(dftOid,0),  "408" |-> ts(dftOid,0),  "404" |-> ts(dftOid,0),  "525" |-> ts(dftOid,0),  "80" |-> ts(dftOid,0),  "149" |-> ts(dftOid,0),  "570" |-> ts(dftOid,0),  "881" |-> ts(dftOid,0),  "458" |-> ts(dftOid,0),  "227" |-> ts(dftOid,0),  "542" |-> ts(dftOid,0),  "480" |-> ts(dftOid,0),  "225" |-> ts(dftOid,0),  "710" |-> ts(dftOid,0),  "70" |-> ts(dftOid,0),  "315" |-> ts(dftOid,0),  "360" |-> ts(dftOid,0),  "648" |-> ts(dftOid,0),  "189" |-> ts(dftOid,0),  "81" |-> ts(dftOid,0),  "53" |-> ts(dftOid,0),  "388" |-> ts(dftOid,0),  "124" |-> ts(dftOid,0),  "781" |-> ts(dftOid,0),  "792" |-> ts(dftOid,0),  "15" |-> ts(dftOid,0),  "603" |-> ts(dftOid,0),  "77" |-> ts(dftOid,0),  "979" |-> ts(dftOid,0),  "496" |-> ts(dftOid,0),  "892" |-> ts(dftOid,0),  "292" |-> ts(dftOid,0),  "242" |-> ts(dftOid,0),  "808" |-> ts(dftOid,0),  "848" |-> ts(dftOid,0),  "8" |-> ts(dftOid,0),  "420" |-> ts(dftOid,0),  "970" |-> ts(dftOid,0),  "854" |-> ts(dftOid,0),  "306" |-> ts(dftOid,0),  "111" |-> ts(dftOid,0),  "119" |-> ts(dftOid,0),  "161" |-> ts(dftOid,0),  "410" |-> ts(dftOid,0),  "989" |-> ts(dftOid,0),  "258" |-> ts(dftOid,0),  "676" |-> ts(dftOid,0) ) .
+ 
+  ***END AUTOMATICALLY GENERATED PARAMETER CODE***
+
+  op init : -> Configuration .
+  eq init = <>
+            < l(self,10001) : ServerShim | sockets : none, contacts : empty, bufferedMsgs : none, created : 0 >
+            < l(self) : Replica | datastore : initDatastore, latestCommit : initLatestCommit,
+                                  tsSqn : empty, sqn : 1 >
+            ---(
+            < l(self) : Replica | datastore : (version("k1","dft",ts(dftOid,0),empty), 
+                                               version("k2","dft",ts(dftOid,0),empty)), 
+                                  latestCommit : ("k1" |-> ts(dftOid,0),
+                                                  "k2" |-> ts(dftOid,0)) > ---NEW
+            )
+
+            ***createServerTcpSocket(socketManager, l(self), 9810, 10)  *** opened for load
+
+	    *** Following are ports for server - maude client communication
+	    ***START AUTOMATICALLY GENERATED SOCKET CODE***
+            createServerTcpSocket(socketManager, l(self), 9000, 10)
+createServerTcpSocket(socketManager, l(self), 9001, 10)
+createServerTcpSocket(socketManager, l(self), 9002, 10)
+createServerTcpSocket(socketManager, l(self), 9003, 10)
+createServerTcpSocket(socketManager, l(self), 9004, 10)
+
+	    ***END AUTOMATICALLY GENERATED SOCKET CODE***
+        .
+
+        --- < l(self,10000) : ClientShim | sockets : none, contacts : empty, bufferedMsgs : none >
+endm
+
+---rew init .
+erew init .
+
+

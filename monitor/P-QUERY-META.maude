@@ -1,0 +1,137 @@
+mod 'P-QUERY is
+  including 'BOOL .
+  including 'OBJS .
+  including 'PI-QUERY .
+  including 'SAMPLING-LIB .
+  sorts none .
+  none
+  op 'delay-issue : 'Oid 'Key 'Queries 'Map`{Key`,Oids`} 'Attributes 'MsgList -> 'DTask [none] .
+  op 'delay-reply : 'Oid 'Oid 'Key 'Map`{Key`,Data`} 'Attributes 'MsgList -> 'DTask [none] .
+  op 'latest : 'Data 'Data -> 'Data [none] .
+  op 'propagate_to_from_ : 'Payload 'Oids 'Oid -> 'Msgs [none] .
+  none
+  eq 'latest['null.Data,'<_`,_>['V:Value,'TS:Timestamp]] = '<_`,_>['V:Value,'TS:Timestamp] [none] .
+  eq 'latest['<_`,_>['V:Value,'TS:Timestamp],'null.Data] = '<_`,_>['V:Value,'TS:Timestamp] [none] .
+  eq 'latest['<_`,_>['V:Value,'TS:Timestamp],'<_`,_>['V':Value,'TS':Timestamp]] = 'if_then_else_fi['_>=_['TS:Timestamp,
+    'TS':Timestamp],'<_`,_>['V:Value,'TS:Timestamp],'<_`,_>['V':Value,'TS':Timestamp]] [none] .
+  eq 'objectEnabled['<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['read['K:Key],'QS:Queries]],
+    'waiting:_['empty.Oids],'read:_['null.Data],'replicas:_['R:Map`{Key`,Oids`}]]]] = 'true.Bool [none] .
+  eq 'propagate_to_from_['P:Payload,'empty.Oids,'O':Oid] = 'null.DMsgs [none] .
+  eq 'propagate_to_from_['P:Payload,'_;_['O:Oid,'OS:Oids],'O':Oid] = '__['to_from_:_['O:Oid,'O':Oid,'P:Payload],
+    'propagate_to_from_['P:Payload,'OS:Oids,'O':Oid]] [none] .
+  ceq 'objectEnabled['<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['read['K:Key],'QS:Queries]],
+    'waiting:_['empty.Oids],'read:_['DAT:Data]]]] = 'true.Bool if '_=/=_['DAT:Data,'null.Data] = 'true.Bool [none] .
+  rl '__['to_:_['O:Oid,'QS':Queries],'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['QS:Queries]]]] =>
+    '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['QS:Queries,'QS':Queries]]]] [label('req)] .
+  rl '__['to_from_:_['O:Oid,'O':Oid,'DAT':Data],'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'waiting:_['_;_[
+    'O':Oid,'OS:Oids]],'read:_['DAT:Data]]]] => '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['read:_['latest['DAT:Data,
+    'DAT':Data]],'_`,_['AS:Attributes,'waiting:_['OS:Oids]]]] [label('update)] .
+ 
+
+  rl '`{_|_`}['__['@C:Config,'delay-issue['O:Oid,'K:Key,'QS:Queries,'R:Map`{Key`,Oids`},'AS:Attributes,'_::_['@M:Msg,
+    '@ML:MsgList]]],'@T:Float] => '`{_|_`}['__['__['@C:Config,'`[_`,_`]['_+_['@T:Float,'_`[_`]['delta-issue['O:Oid,
+    'K:Key,'QS:Queries,'R:Map`{Key`,Oids`},'AS:Attributes],'_`[_`]['sample['lognormal['mSize['K:Key],
+    '1.0000000000000001e-1.FiniteFloat]],'rand.Float]]],'@M:Msg]],'delay-issue['O:Oid,'K:Key,'QS:Queries,
+    'R:Map`{Key`,Oids`},'AS:Attributes,'@ML:MsgList]],'@T:Float] [label('delay-issue-1)] .
+ 
+
+
+  rl '`{_|_`}['__['@C:Config,'delay-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},'AS:Attributes,'_::_['@M:Msg,
+    '@ML:MsgList]]],'@T:Float] => '`{_|_`}['__['__['@C:Config,'`[_`,_`]['_+_['@T:Float,'_`[_`]['delta-reply['O:Oid,
+    'O':Oid,'K:Key,'DB:Map`{Key`,Data`},'AS:Attributes],'_`[_`]['sample['lognormal['mSize['_`[_`]['DB:Map`{Key`,Data`},
+    'K:Key]],'1.0000000000000001e-1.FiniteFloat]],'rand.Float]]],'@M:Msg]],'delay-reply['O:Oid,'O':Oid,'K:Key,
+    'DB:Map`{Key`,Data`},'AS:Attributes,'@ML:MsgList]],'@T:Float] [label('delay-reply-1)] .
+  
+
+  rl '`{_|_`}['__['@OBJS:Objects,'@DMS:DMsgs,'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_[
+    'read['K:Key],'QS:Queries]],'waiting:_['empty.Oids],'read:_['null.Data],'replicas:_['R:Map`{Key`,Oids`}]]]],
+    '@T:Float] 
+    => 
+    '`{_|_`}['__['__['__['@OBJS:Objects,'@DMS:DMsgs],'delay-issue['O:Oid,'K:Key,'QS:Queries,
+    'R:Map`{Key`,Oids`},'AS:Attributes,'sort['propagate_to_from_['read['K:Key],'_`[_`]['R:Map`{Key`,Oids`},'K:Key],
+    'O:Oid]]]],'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['queries:_['_::_['read['K:Key],'QS:Queries]],'_`,_['waiting:_[
+    '_`[_`]['R:Map`{Key`,Oids`},'K:Key]],'_`,_['read:_['null.Data],'_`,_['AS:Attributes,'replicas:_[
+    'R:Map`{Key`,Oids`}]]]]]]],'@T:Float] [label('issue)] .
+
+
+  
+
+
+  rl '`{_|_`}['__['@OBJS:Objects,'@DMS:DMsgs,'to_from_:_['O:Oid,'O':Oid,'read['K:Key]],'<_:_|_>['O:Oid,'Server.ObjType,
+    '_`,_['AS:Attributes,'database:_['DB:Map`{Key`,Data`}]]]],'@T:Float] => '`{_|_`}['__['__['__['@OBJS:Objects,
+    '@DMS:DMsgs],'delay-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},'AS:Attributes,'sort['to_from_:_['O':Oid,
+    'O:Oid,'_`[_`]['DB:Map`{Key`,Data`},'K:Key]]]]],'<_:_|_>['O:Oid,'Server.ObjType,'_`,_['AS:Attributes,'database:_[
+    'DB:Map`{Key`,Data`}]]]],'@T:Float] [label('reply)] .
+  rl 'delay-issue['O:Oid,'K:Key,'QS:Queries,'R:Map`{Key`,Oids`},'AS:Attributes,'nil.MsgList] => 'null.DMsgs [label(
+    'delay-issue-2)] .
+  rl 'delay-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},'AS:Attributes,'nil.MsgList] => 'null.DMsgs [label(
+    'delay-reply-2)] .
+  crl '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['read['K:Key],'QS:Queries]],'waiting:_[
+    'empty.Oids],'read:_['DAT:Data]]] => '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['queries:_['QS:Queries],'_`,_[
+    'waiting:_['empty.Oids],'_`,_['AS:Attributes,'read:_['null.Data]]]]] if '_=/=_['DAT:Data,'null.Data] = 'true.Bool [
+    label('finish)] .
+endm
+
+ mod 'QUERY is
+  including 'BOOL .
+  including 'OBJS .
+  sorts none .
+  none
+  op 'latest : 'Data 'Data -> 'Data [none] .
+  op 'propagate_to_from_ : 'Payload 'Oids 'Oid -> 'Msgs [none] .
+  none
+  eq 'latest['null.Data,'<_`,_>['V:Value,'TS:Timestamp]] = '<_`,_>['V:Value,'TS:Timestamp] [none] .
+  eq 'latest['<_`,_>['V:Value,'TS:Timestamp],'null.Data] = '<_`,_>['V:Value,'TS:Timestamp] [none] .
+  eq 'latest['<_`,_>['V:Value,'TS:Timestamp],'<_`,_>['V':Value,'TS':Timestamp]] = 'if_then_else_fi['_>=_['TS:Timestamp,
+    'TS':Timestamp],'<_`,_>['V:Value,'TS:Timestamp],'<_`,_>['V':Value,'TS':Timestamp]] [none] .
+  eq 'propagate_to_from_['P:Payload,'empty.Oids,'O':Oid] = 'null.DMsgs [none] .
+  eq 'propagate_to_from_['P:Payload,'_;_['O:Oid,'OS:Oids],'O':Oid] = '__['to_from_:_['O:Oid,'O':Oid,'P:Payload],
+    'propagate_to_from_['P:Payload,'OS:Oids,'O':Oid]] [none] .
+  
+
+  rl '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['read['K:Key],'QS:Queries]],'waiting:_[
+    'empty.Oids],'read:_['null.Data],'replicas:_['R:Map`{Key`,Oids`}]]] => 
+
+    '__['<_:_|_>['O:Oid,'Client.ObjType,'_`,_[
+    'queries:_['_::_['read['K:Key],'QS:Queries]],'_`,_['waiting:_['_`[_`]['R:Map`{Key`,Oids`},'K:Key]],'_`,_['read:_[
+    'null.Data],'_`,_['AS:Attributes,'replicas:_['R:Map`{Key`,Oids`}]]]]]],
+    'propagate_to_from_['read['K:Key],'_`[_`][
+    'R:Map`{Key`,Oids`},'K:Key],'O:Oid]] [label('issue)] .
+
+
+
+  rl '__['to_:_['O:Oid,'QS':Queries],'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['QS:Queries]]]] =>
+    '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['QS:Queries,'QS':Queries]]]] [label('req)] .
+  rl '__['to_from_:_['O:Oid,'O':Oid,'DAT':Data],'<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'waiting:_['_;_[
+    'O':Oid,'OS:Oids]],'read:_['DAT:Data]]]] => '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['read:_['latest['DAT:Data,
+    'DAT':Data]],'_`,_['AS:Attributes,'waiting:_['OS:Oids]]]] [label('update)] .
+  rl '__['to_from_:_['O:Oid,'O':Oid,'read['K:Key]],'<_:_|_>['O:Oid,'Server.ObjType,'_`,_['AS:Attributes,'database:_[
+    'DB:Map`{Key`,Data`}]]]] => '__['to_from_:_['O':Oid,'O:Oid,'_`[_`]['DB:Map`{Key`,Data`},'K:Key]],'<_:_|_>['O:Oid,
+    'Server.ObjType,'_`,_['AS:Attributes,'database:_['DB:Map`{Key`,Data`}]]]] [label('reply)] .
+  crl '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['AS:Attributes,'queries:_['_::_['read['K:Key],'QS:Queries]],'waiting:_[
+    'empty.Oids],'read:_['DAT:Data]]] => '<_:_|_>['O:Oid,'Client.ObjType,'_`,_['queries:_['QS:Queries],'_`,_[
+    'waiting:_['empty.Oids],'_`,_['AS:Attributes,'read:_['null.Data]]]]] if '_=/=_['DAT:Data,'null.Data] = 'true.Bool [
+    label('finish)] .
+endm
+
+
+
+
+'_;;_['_;;_['`[_`,_`][''init.Sort,'exponential['1.0000000000000001e-1.FiniteFloat]],'`[_`,_`,_`][
+    ''issue.Sort,'lognormal['mSize['K:Key],'1.0000000000000001e-1.FiniteFloat],'delta-issue['O:Oid,'K:Key,'QS:Queries,
+    'R:Map`{Key`,Oids`},'AS:Attributes]]],'`[_`,_`,_`][''reply.Sort,'lognormal['mSize['_`[_`]['DB:Map`{Key`,Data`},
+    'K:Key]],'1.0000000000000001e-1.FiniteFloat],'delta-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},
+    'AS:Attributes]]]
+
+
+    red get23TermsByID('issue, eq 'tpls.Tuples = '_;;_['_;;_['`[_`,_`][''init.Sort,'exponential['1.0000000000000001e-1.FiniteFloat]],'`[_`,_`,_`][
+    ''issue.Sort,'lognormal['mSize['K:Key],'1.0000000000000001e-1.FiniteFloat],'delta-issue['O:Oid,'K:Key,'QS:Queries,
+    'R:Map`{Key`,Oids`},'AS:Attributes]]],'`[_`,_`,_`][''reply.Sort,'lognormal['mSize['_`[_`]['DB:Map`{Key`,Data`},
+    'K:Key]],'1.0000000000000001e-1.FiniteFloat],'delta-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},
+    'AS:Attributes]]] [nonexec] .
+  eq '_`[_`]['delta-issue['O:Oid,'K:Key,'QS:Queries,'R:Map`{Key`,Oids`},'AS:Attributes],'D:Float] = 'D:Float [none] .
+  eq '_`[_`]['delta-reply['O:Oid,'O':Oid,'K:Key,'DB:Map`{Key`,Data`},'AS:Attributes],'D:Float] = '_*_['distance['O:Oid,
+    'O':Oid],'D:Float] [none] .
+  eq 'distance['O:Oid,'O':Oid] = '1.0.FiniteFloat [none] .
+  eq 'mSize['DAT:Data] = '1.0.FiniteFloat [none] .
+  eq 'mSize['K:Key] = '1.0.FiniteFloat [none] .) .

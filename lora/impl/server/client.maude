@@ -1,0 +1,74 @@
+load shim-dynamic-new
+
+mod CLIENT is
+  pr SHIM-DYNAMIC .
+  pr MAP{String,String} .
+
+  sort Table .
+  subsort Table < Cid .
+  op Table : -> Table .
+
+  op tb : -> Oid .
+
+  op table :_ : Map{String,String} -> Attribute [ctor gather(&)] . 
+
+
+  sort Client .  *** Shim has as ID l(IP,0), e.g., l("localhost",0)
+  subsort Client < Cid .
+  op Client : -> Client .
+
+  op sent :_ : Nat -> Attribute [ctor gather(&)] .
+  op rcved :_ : Nat -> Attribute [ctor gather(&)] .
+
+
+  vars O O' TB : Oid .
+  vars N N' N'' : Nat .
+  vars AS AS' : AttributeSet .
+  vars STR KR KV READ VALUE : String .
+  var KVS : Map{String,String} .
+
+
+  *** Maude server ip
+  op server-addr : -> Oid .
+  eq server-addr = l(addr) .
+
+  op addr : -> String .
+  eq addr = "128.174.244.87" .
+
+  op self : -> String .
+  eq self = "10.193.213.161" .
+
+
+  rl < O : Client | sent : N, AS >
+     [STR]
+   => 
+     < O : Client | sent : N + 1, AS >
+     (msg STR from O to server-addr) .
+
+---(
+   rl < O : Client | rcved : N, AS >
+      (msg VALUE from O' to O)
+    =>
+      < O : Client | rcved : N + 1, AS >
+      [VALUE] .
+)
+
+
+  op init : -> Configuration .
+  eq init = <>
+            < l(self,0) : ClientShim | sockets : none, contacts : empty >
+            < l(self,2) : Client | sent : 0, rcved : 0 > 
+            createClientTcpSocket(socketManager,l(self,2),addr,9810)
+                  
+            < l(self,1) : ServerShim | sockets : none, contacts : empty >
+            createServerTcpSocket(socketManager, l(self,2), 9910, 5) .
+            
+endm
+
+erew init .
+---rew addKeyReplica("k[eok]a[eoa]k1[eok]a1[eoa]",empty) .
+---rew genReads("k[eor]k1[eor]",("k" |-> "a", "k1" |-> "a1"),l("localhost",2)) .
+---rew genWrites("k[eok]v[eov]k1[eok]v1[eov]",("k" |-> "a", "k1" |-> "a1"),l("localhost",2)) .
+
+
+

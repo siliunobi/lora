@@ -1,0 +1,8 @@
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude alpha117 built: Jul 10 2018 19:50:40
+	    Copyright 1997-2018 SRI International
+		   Sat Jul 28 13:47:36 2018
+==========================================
+erewrite in SERVER : init .

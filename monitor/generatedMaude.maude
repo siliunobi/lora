@@ -1,0 +1,82 @@
+mod P-QUERY is
+  including BOOL .
+  including OBJS .
+  including PI-QUERY .
+  including SAMPLING-LIB .
+  op delay-issue : Oid Key Queries Map{Key,Oids}Attributes MsgList -> DTask .
+  op delay-reply : Oid Key Oid Map{Key,Data}Attributes MsgList -> DTask .
+  op latest : Data Data -> Data .
+  op propagate_to_from_ : Payload Oids Oid -> Msgs .
+  eq latest(null,< V:Value,TS:Timestamp >)
+    = < V:Value,TS:Timestamp > .
+  eq latest(< V:Value,TS:Timestamp >,null)
+    = < V:Value,TS:Timestamp > .
+  eq latest(< V:Value,TS:Timestamp >,< V':Value,TS':Timestamp >)
+    = if TS:Timestamp >= TS':Timestamp then < V:Value,TS:Timestamp > else < V':Value,TS':Timestamp > fi .
+  eq objectEnabled(
+< O:Oid : Client | queries:(read(K:Key):: QS:Queries),waiting: empty,read: null,replicas: R:Map{Key,Oids},AS:Attributes
+    >)
+    = true .
+  eq propagate P:Payload to empty from O':Oid
+    = (null).DMsgs .
+  eq propagate P:Payload to O:Oid ; OS:Oids from O':Oid
+    = (propagate P:Payload to OS:Oids from O':Oid)to O:Oid from O':Oid : P:Payload .
+  ceq objectEnabled(
+< O:Oid : Client | queries:(read(K:Key):: QS:Queries),waiting: empty,read: DAT:Data,AS:Attributes >)
+    = true
+    if DAT:Data =/=(null).Data = true .
+  rl (to O:Oid : QS':Queries)
+< O:Oid : Client | queries: QS:Queries,AS:Attributes >
+    =>
+< O:Oid : Client | queries:(QS:Queries :: QS':Queries),AS:Attributes > [label req] .
+  rl (to O:Oid from O':Oid : DAT':Data)
+< O:Oid : Client | read: DAT:Data,waiting:(O':Oid ; OS:Oids),AS:Attributes >
+    =>
+< O:Oid : Client | read: latest(DAT:Data,DAT':Data),waiting: OS:Oids,AS:Attributes > [label update] .
+  rl
+{@C:Config delay-issue(O:Oid,K:Key,QS:Queries,R:Map{Key,Oids},AS:Attributes,@M:Msg :: @ML:MsgList)|
+@T:Float}
+    =>
+{(@C:Config[@T:Float +(delta-issue(O:Oid,K:Key,QS:Queries,R:Map{Key,Oids},AS:Attributes)[sample(lognormal(mSize(K:Key),
+    1.0000000000000001e-1))[rand]]),@M:Msg])delay-issue(O:Oid,K:Key,QS:Queries,R:Map{Key,Oids},AS:Attributes,
+    @ML:MsgList)|
+@T:Float} [label delay-issue] .
+  rl
+{@C:Config delay-reply(O':Oid,K:Key,O:Oid,DB:Map{Key,Data},AS:Attributes,@M:Msg :: @ML:MsgList)|
+@T:Float}
+    =>
+{(@C:Config[@T:Float +(delta-reply(O:Oid,O':Oid,K:Key,DB:Map{Key,Data},AS:Attributes)[sample(lognormal(mSize(DB:Map{
+    Key,Data}[K:Key]),1.0000000000000001e-1))[rand]]),@M:Msg])delay-reply(O':Oid,K:Key,O:Oid,DB:Map{Key,Data},
+    AS:Attributes,@ML:MsgList)|
+@T:Float} [label delay-reply] .
+  rl
+{@OBJS:Objects @DMS:DMsgs
+< O:Oid : Client | queries:(read(K:Key):: QS:Queries),waiting: empty,read: null,replicas: R:Map{Key,Oids},AS:Attributes
+    > |
+@T:Float}
+    =>
+{@OBJS:Objects @DMS:DMsgs(
+< O:Oid : Client | queries:(read(K:Key):: QS:Queries),waiting:(R:Map{Key,Oids}[K:Key]),read: null,replicas: R:Map{Key,
+    Oids},AS:Attributes > propagate read(K:Key)to R:Map{Key,Oids}[K:Key]from O:Oid)delay-issue(O:Oid,K:Key,QS:Queries,
+    R:Map{Key,Oids},AS:Attributes,sort(propagate read(K:Key)to R:Map{Key,Oids}[K:Key]from O:Oid))|
+@T:Float} [label issue] .
+  rl
+{@OBJS:Objects @DMS:DMsgs(to O:Oid from O':Oid : read(K:Key))
+< O:Oid : Server | database: DB:Map{Key,Data},AS:Attributes > |
+@T:Float}
+    =>
+{@OBJS:Objects @DMS:DMsgs(
+< O:Oid : Server | database: DB:Map{Key,Data},AS:Attributes > to O':Oid from O:Oid : DB:Map{Key,Data}[
+    K:Key])delay-reply(O':Oid,K:Key,O:Oid,DB:Map{Key,Data},AS:Attributes,sort(to O':Oid from O:Oid : DB:Map{Key,Data}[
+    K:Key]))|
+@T:Float} [label reply] .
+  rl delay-issue(O:Oid,K:Key,QS:Queries,R:Map{Key,Oids},AS:Attributes,nil)
+    => (null).DMsgs [label delay-issue] .
+  rl delay-reply(O':Oid,K:Key,O:Oid,DB:Map{Key,Data},AS:Attributes,nil)
+    => (null).DMsgs [label delay-reply] .
+  crl
+< O:Oid : Client | queries:(read(K:Key):: QS:Queries),waiting: empty,read: DAT:Data,AS:Attributes >
+    =>
+< O:Oid : Client | queries: QS:Queries,waiting: empty,read: null,AS:Attributes >
+    if DAT:Data =/=(null).Data = true [label finish] .
+endm

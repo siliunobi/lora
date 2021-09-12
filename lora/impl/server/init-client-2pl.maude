@@ -1,0 +1,98 @@
+---load ramp-f
+---load ramp-s
+load 2pl
+
+mod INIT-CLIENT is
+  inc RAMP-F .
+  inc SHIM-DYNAMIC .
+
+
+  vars O O' : Oid .
+  vars N' N : Nat .
+  vars STR KR : String .
+  var RT : ReplicaTable .
+
+  ---(
+  *** post load
+ crl < O : Table | table : RT >
+     [KR,O']
+   => 
+     < O : Table | table : addKeyReplica(KR,RT) >
+     if N := find(KR,"[eoa]",0) .
+
+  op addKeyReplica : String ReplicaTable -> ReplicaTable .
+ ceq addKeyReplica(KR,RT) = addKeyReplica(substr(STR,N' + 5,length(STR)),insert(substr(KR,0,N),substr(STR,0,N'),RT))
+       if N := find(KR, "[eok]", 0) /\ 
+        STR := substr(KR, N + 5, length(KR)) /\
+         N' := find(STR, "[eoa]", 0) .
+  eq addKeyReplica("",RT) = RT .
+  )
+
+  ops tb m : -> Oid .
+
+  op self : -> String .
+  eq port = 9000 .  *** the base port for client talking to server
+  eq backLog = 1 .  *** the BACKLOG parameter on the server side
+  op clientId : -> Nat .
+
+  *** Newly added for separating YCSB
+  op initTable : -> ReplicaTable .
+  op initSqn : -> Nat .
+  op initTxns : -> ObjList .
+
+
+  ***START AUTOMATICALLY GENERATED PARAMETER CODE***
+  eq self = "155.98.39.143" .
+  eq numberOfServerSockets = 0 . *** one for post-load, one for txns
+  eq clientId = 0 .
+
+  eq initTable = empty .
+  eq initSqn = 0 .
+  eq initTxns = emptyTxnList .
+  ***END AUTOMATICALLY GENERATED PARAMETER CODE***
+
+  op init : -> Configuration .
+  eq init = <>
+            < l(self,10000) : ClientShim | sockets : none, contacts : empty, bufferedMsgs : none >
+            < l(self,10001) : ServerShim | sockets : none, contacts : empty, bufferedMsgs : none, created : 0 >
+
+            < l(self,clientId) : Client | txns : initTxns, sqn : initSqn,
+                                   executing : none, committed : none, 
+                                   aborted : none, abortSites : noVS, votes : noVote,
+                                   voteSites : noVS, commitSites : noVS > 
+
+            < tb : Table | table : initTable >
+
+            < m : Monitor | count : 0 >
+
+	    ***START AUTOMATICALLY GENERATED SOCKET CODE***
+            ***createServerTcpSocket(socketManager, l(self,clientId), 9810, 10)  *** opened for post-load
+            ***createServerTcpSocket(socketManager, l(self,clientId), 9910, 10)  *** opened for txns
+	    ***END AUTOMATICALLY GENERATED SOCKET CODE***
+        .
+
+  --- local test
+  ---(
+  eq init = ---<>
+            ---< l(self,10000) : ClientShim | sockets : none, contacts : empty, bufferedMsgs : none >
+            ---< l(self,10001) : ServerShim | sockets : none, contacts : empty, bufferedMsgs : none, created : 0 >
+
+            *** l(self,0) when deployed
+            < l(self) : Client | txns : emptyTxnList, sqn : 0,
+                                 executing : none, committed : none, 
+                                 1stGetSites : no1st, 2ndGetSites : no2nd,
+                                 voteSites : noVS, commitSites : noVS > 
+
+            < l(addr1) : Replica | datastore : empty, latestCommit : empty >
+
+            < tb : Table | table : "k0" |-> addr1, "k1" |-> addr1 >
+
+            < m : Monitor | count : 0 >
+
+            ["k0[eok]v0[eov]k1[eok]v1[eov]",l(self)]  
+            ["k0[eor]k1[eor]",l(self)] .  *** l(self,0) when deployed
+  )
+endm
+
+---rew init .
+erew init .

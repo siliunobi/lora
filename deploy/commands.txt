@@ -1,0 +1,21 @@
+sh update_server_txn.sh 0 25 9000 5
+<ServerID, #clients, initialPort, backlog#>
+
+nohup sh run_server0.sh 137 &
+---
+
+sh update_client_txn.sh 5 5 9910 5
+<ClientID, #clients, initialPort>
+
+nohup sh run_client6.sh 135 103 &
+---
+
+sh load-ycsb.sh 137 103 90 156 136 > /run/shm/load.txt
+sh postload-ycsb.sh 137 103 90 156 136
+sh kill_postload.sh
+
+nohup bash run-ycsb.sh 108 9910 5 1000 19:50:00 > /run/shm/run.txt &
+<IP address, initial port, number of clients, operation count, time to start>
+
+nohup bash kill_ycsb.sh 19:55:00 5 &
+<time to start, client ID>

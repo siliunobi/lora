@@ -1,0 +1,45 @@
+load distr-lib
+load query
+load sampling-lib 
+
+(mod PI-QUERY is 
+  inc DISTR-LIB + QUERY .
+ 	
+  *** user-defined distributions
+  op myDistr : Float Float Float -> RFun .  *** alpha, beta, gamma
+  
+  vars O O' TB : Oid .  vars QS QS' : Queries .
+  var OS : Oids .  var R : Map{Key,Oids} .
+  vars AS AS' : Attributes .  var K : Key .
+  var DB : Map{Key,Data} .  vars V V' : Value .
+  var P : Payload .  vars DAT DAT' : Data .  
+  vars TS TS' : Timestamp .
+  var D : Float .
+ 	
+  *** delta function and its application for rule reply  
+  op delta-reply : Oid Oid Key Map{Key,Data} Attributes -> RFun .
+  eq delta-reply(O,O',K,DB,AS)[D] = distance(O,O') * D . 
+  
+  op delta-issue : Oid Key Queries Map{Key,Oids} Attributes -> RFun .
+  eq delta-issue(O,K,QS,R,AS)[D] = D .
+  
+  
+  *** auxiliary functions
+  op distance : Oid Oid -> Float .
+  eq distance(O,O') = 1.0 .
+  
+  op mSize : Data -> Float .
+  eq mSize(DAT) = 1.0 .
+  
+  op mSize : Key -> Float .
+  eq mSize(K) = 1.0 .
+  
+  *** delta functions and their applications for the other rules
+
+  *** rule-specific tuples
+  eq tpls = ['reply,lognormal(mSize(DB[K]),0.1),delta-reply(O,O',K,DB,AS)] ;; 
+            ['init,exponential(0.1)] ;; 
+			['issue,lognormal(mSize(K),0.1),delta-issue(O,K,QS,R,AS)] [nonexec] .
+
+endm)
+

@@ -1,0 +1,411 @@
+load shim-obj
+---load ramp-prelim
+---load 2pl-prelim
+load rola-prelim
+
+---(
+set trace on .
+set trace mb off .
+set trace eq off .
+set trace condition off .
+)
+
+mod SHIM-DYNAMIC is
+  pr SHIM .
+  pr BUFFERED-SOCKET .
+  pr MSG-STRING-CONVERSION .
+
+  var SERVERSHIM : ServerShim .
+  var CLIENTSHIM : ClientShim .
+  var SHIM : Shim .
+  vars SERVER O SOCKET SOCKET-MANAGER LISTENER CLIENT 
+       O' O'' O''' SELF TARGET : Oid .
+  vars PORT BACKLOG : Nat .
+  vars AS AS' : AttributeSet .
+  vars IP S DATA : String .
+  vars SKTS MSGS : Configuration .
+  var N : Nat .
+  var MSG : MsgCont .
+  var STR : String .
+  var CONTACTS : Skts .
+
+
+  *** I assume in the initial state each server/client
+  *** will be associated with its own "createClient/ServerTcpSocket"
+
+
+  *******************
+  *** Server Shim ***
+
+  op flag :_ : Bool -> Attribute [ctor gather(&)] . 
+  op created :_ : Nat -> Attribute [ctor gather(&)] .   
+
+ crl [created-server-socket] :
+     < O : SERVERSHIM | sockets : SKTS, created : N, AS >
+     createdSocket(SERVER, socketManager, LISTENER)
+   => 
+     < O : SERVERSHIM | sockets : SKTS < LISTENER : BufferedSocket | read : "" >,
+                        created : N + 1, AS > 
+     acceptClient(LISTENER, SERVER) 
+   if N < numberOfServerSockets .
+   *** It could also result in a socketError(SERVER, socketManager, REASON) message
+
+  op numberOfServerSockets : -> Nat .
+
+
+ crl [accepted-client] :
+     < O : SERVERSHIM | sockets : SKTS, contacts : CONTACTS, AS >
+     acceptedClient(SERVER, LISTENER, IP, CLIENT)
+   =>
+     < O : SERVERSHIM | sockets : SKTS < CLIENT : BufferedSocket | read : "" >,
+                                      contacts : CONTACTS ; < SERVER,CLIENT,l(IP) >, AS >
+     receive(CLIENT,SERVER)
+     acceptClient(LISTENER, SERVER)
+     send(CLIENT,SERVER,msg2string(new-socket(SERVER)) + "[msep]")
+     if not CLIENT in SKTS .
+     
+
+  op _in_ : Oid Configuration -> Bool .
+  eq O in (SKTS < O : BufferedSocket | AS >) = true .
+  eq O in SKTS = false [owise] . 
+
+  rl [accepted-client-2] :
+     < O : SERVERSHIM | sockets : SKTS < CLIENT : BufferedSocket | AS' >, contacts : CONTACTS, AS >
+     acceptedClient(SERVER, LISTENER, IP, CLIENT)
+   =>
+     < O : SERVERSHIM | sockets : SKTS < CLIENT : BufferedSocket | AS' >,
+                        contacts : CONTACTS ; < SERVER,CLIENT,l(IP) >, AS >
+     receive(CLIENT,SERVER)
+     acceptClient(LISTENER, SERVER) 
+     send(CLIENT,SERVER,msg2string(new-socket(SERVER)) + "[msep]") .
+
+
+  *******************
+  *** Client Shim ***
+
+ crl [created-client-socket] :
+     < O : CLIENTSHIM | sockets : SKTS,
+                        contacts : CONTACTS, AS >
+     < O'' : SERVERSHIM | created : N, AS' >
+     createdSocket(O', socketManager, SOCKET)  --- O' is the ID of the client who creatClientTcpSocket
+   => 
+     < O : CLIENTSHIM | sockets : SKTS < SOCKET : BufferedSocket | read : "" >,
+                        contacts : CONTACTS ; < O',SOCKET,null >, AS > 
+     < O'' : SERVERSHIM | created : N, AS' >
+     receive(SOCKET,O') 
+     send(SOCKET,O',msg2string(new-socket(O')) + "[msep]") 
+   if N == numberOfServerSockets .
+
+
+
+  ************
+  *** Shim ***
+
+  rl [received-from-client] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >, AS >
+     received(SERVER, SOCKET, DATA)
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S + DATA >, AS >
+     receive(SOCKET, SERVER) .
+
+
+ crl [flush-msg-beg-0] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >, 
+                  AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "[beg]", 0) + 5, length(S)) >,
+                  AS >
+     ---string2msg(substr(S, 0, N))
+     if find(substr(S,0,find(S, "[beg]", 0)),"[sep]",0) == notFound /\
+        find(substr(S,0,find(S, "[beg]", 0)),"[sep\335",0) == notFound /\
+        find(substr(S,0,find(S, "[beg]", 0)),"beg]",0) == notFound /\ 
+        find(substr(S,0,find(S, "[beg]", 0)),"[msep]",0) == notFound /\ 
+        not new-socket(substr(S,0,find(S, "[beg]", 0))) . 
+
+
+crl [flush-msg-beg] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >,
+                  AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "beg]", 0) + 4, length(S)) >,
+                  AS >
+     ---string2msg(substr(S, 0, N))
+     if find(substr(S,0,find(S, "beg]", 0)),"[sep]",0) == notFound /\
+        find(substr(S,0,find(S, "beg]", 0)),"[sep\335",0) == notFound /\
+        find(substr(S,0,find(S, "beg]", 0)),"[beg]",0) == notFound /\
+        find(substr(S,0,find(S, "beg]", 0)),"[msep]",0) == notFound /\
+        not new-socket(substr(S,0,find(S, "beg]", 0))) . 
+
+
+  ******
+  ******
+  ******
+
+---(
+ crl [flush-msg-1] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >, 
+                        contacts : LS, AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "[sep]", 0) + 5, length(S)) >,
+                        contacts : LS, AS >
+     ---string2msg(substr(S, 0, N))
+     [substr(S,0,find(S, "[sep]", 0))]
+     if find(substr(S,0,find(S, "[sep]", 0)),"[sep\335",0) == notFound /\
+        find(substr(S,0,find(S, "[sep]", 0)),"[beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[sep]", 0)),"beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[sep]", 0)),"[msep]",0) == notFound /\
+        not new-socket(substr(S,0,find(S, "[sep]", 0))) .
+)
+
+ crl [flush-msg-1] :
+      < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >,
+                   contacts : CONTACTS ; < SELF,SOCKET,TARGET >, AS >
+    =>
+      < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : 
+substr(S, find(S, "[sep]", 0) + 5, length(S)) >,
+                  contacts : CONTACTS ; < SELF,SOCKET,TARGET >,AS >
+      ---string2msg(substr(S, 0, N))
+      [substr(S,0,find(S, "[sep]", 0)),SELF]
+      if find(substr(S,0,find(S, "[sep]", 0)),"[sep\335",0) == notFound /\
+         find(substr(S,0,find(S, "[sep]", 0)),"[beg]",0) == notFound /\
+         find(substr(S,0,find(S, "[sep]", 0)),"beg]",0) == notFound /\
+         find(substr(S, find(S, "[sep]", 0) + 5, length(S)),"[msep]",0) 
+== notFound /\
+         not new-socket(substr(S,0,find(S, "[sep]", 0))) .
+
+crl [flush-msg-2] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >,
+                  contacts : CONTACTS ; < SELF,SOCKET,TARGET >,AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "[sep\335", 0) + 8, length(S)) >,
+                  contacts : CONTACTS ; < SELF,SOCKET,TARGET >,AS >
+     ---string2msg(substr(S, 0, N))
+     [substr(S,0,find(S, "[sep\335", 0)),SELF]
+     if find(substr(S,0,find(S, "[sep\335", 0)),"[sep]",0) == notFound /\
+        find(substr(S,0,find(S, "[sep\335", 0)),"[beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[sep\335", 0)),"beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[sep\335", 0)),"[msep]",0) == notFound /\
+        not new-socket(substr(S,0,find(S, "[sep\335", 0))) .
+
+
+crl [flush-msg-maude] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >,
+                   AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "[msep]", 0) + 6, length(S)) >,
+                   AS >
+     string2msg(substr(S,0,find(S, "[msep]", 0)))
+     if 
+        find(substr(S,0,find(S, "[msep]", 0)),"[beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[msep]", 0)),"beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[msep]", 0)),"[sep\335",0) == notFound /\
+        not new-socket(substr(S,0,find(S, "[msep]", 0))) .
+
+
+
+  op `[_`] : String -> Configuration .
+  op [_,_] : String Oid -> Configuration .
+
+  op new-socket : String -> Bool .
+ ceq new-socket(STR) = true if new-socket(O) := string2msg(STR) .
+  eq new-socket(STR) = false [owise] .
+
+
+ crl [dft-socket] :
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : S >, 
+                  contacts : CONTACTS ; < SELF,SOCKET,TARGET >, AS >
+   =>
+     < O : SHIM | sockets : SKTS < SOCKET : BufferedSocket | read : substr(S, find(S, "[msep]", 0) + 6, length(S)) >,
+                  contacts : CONTACTS ; < SELF,SOCKET,O' >, AS >
+     if find(substr(S,0,find(S, "[msep]", 0)),"[sep]",0) == notFound /\
+        find(substr(S,0,find(S, "[msep]", 0)),"[beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[msep]", 0)),"beg]",0) == notFound /\
+        find(substr(S,0,find(S, "[msep]", 0)),"[sep\335",0) == notFound /\
+        new-socket(O') := string2msg(substr(S,0,find(S, "[msep]", 0))) .
+
+
+  op _[_,_] : Skts Oid Oid -> Oid .
+  eq (CONTACTS ; < SELF,SOCKET,TARGET >)[SELF,TARGET] = SOCKET .
+  eq CONTACTS[SELF,TARGET] = null [owise] . 
+
+
+ crl [send-msg-1] :
+     < O : SERVERSHIM | contacts : CONTACTS, AS >
+     {msg MSG from O' to O''} 
+   =>
+     < O : SERVERSHIM | contacts : CONTACTS, AS >
+     send(CONTACTS[O',O''],O',msg2string(msg MSG from O' to O'') + "[msep]") 
+     if CONTACTS[O',O''] =/= null .
+        *** /\ ip(O) =/= ip(O'') *** if undefined, then msg will stay in the soup
+***??? could be saved as no self in contacts                    
+                             *** until the socket is built up
+                             *** target is not resident, i.e., 
+                             *** msg targeting local resident will stay in the soup
+
+ crl [send-msg-1-temp] :
+     < O : SERVERSHIM | contacts : CONTACTS, AS >
+     {msg MSG from O' to O'' and O'''} 
+   =>
+     < O : SERVERSHIM | contacts : CONTACTS, AS >
+     send(CONTACTS[O',O''],O',msg2string(msg MSG from O' to O'' and O''') + "[msep]") 
+     if CONTACTS[O',O''] =/= null .
+        *** /\ ip(O) =/= ip(O'') *** if undefined, then msg will stay in the soup
+***??? could be saved as no self in contacts                    
+                             *** until the socket is built up
+                             *** target is not resident, i.e., 
+                             *** msg targeting local resident will stay in the soup
+
+
+crl [send-msg-1-str] :
+      < O : SERVERSHIM | contacts : CONTACTS, AS >
+      {msg STR from O' to O''}
+    =>
+      < O : SERVERSHIM | contacts : CONTACTS, AS >
+      send(CONTACTS[O',O''],O',msg2string(msg STR from O' to O'') + "[msep]")
+      if CONTACTS[O',O''] =/= null .
+         *** /\ ip(O) =/= ip(O'') *** if undefined, then msg will stay in the soup
+***??? could be removed as no self in contacts
+                              *** until the socket is built up
+                              *** target is not resident, i.e.,
+                              *** msg targeting local resident will stay in the soup
+
+crl [send-msg-1-str-temp] :
+      < O : SERVERSHIM | contacts : CONTACTS, AS >
+      {msg STR from O' to O'' and O'''}
+    =>
+      < O : SERVERSHIM | contacts : CONTACTS, AS >
+      send(CONTACTS[O',O''],O',msg2string(msg STR from O' to O'' and O''') + "[msep]")
+      if CONTACTS[O',O''] =/= null .
+         *** /\ ip(O) =/= ip(O'') *** if undefined, then msg will stay in the soup
+***??? could be removed as no self in contacts
+                              *** until the socket is built up
+                              *** target is not resident, i.e.,
+                              *** msg targeting local resident will stay in the soup
+
+
+
+  *** This works in the scenario that a client tries to reach a server
+  *** client can be either an actual client, or a server that tries to reach another server
+ crl [send-msg-2] :
+     < O : CLIENTSHIM | contacts : CONTACTS, 
+                  bufferedMsgs : MSGS, AS >
+     < msg MSG from O' to O'' > 
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg MSG from O' to O''), AS >
+     if exist(O'',MSGS)
+       then none
+       else createClientTcpSocket(socketManager,O',ip(O''),port + id(O') quo backLog) 
+     fi     
+     if CONTACTS[O',O''] == null /\
+        ip(O) =/= ip(O'') .  
+***??? this one needed
+
+  op exist : Oid Configuration -> Bool . 
+  eq exist(O,MSGS (msg MSG from O' to O)) = true .
+
+  eq exist(O,MSGS (msg STR from O' to O)) = true .
+  eq exist(O,MSGS (msg MSG from O' to O and O'')) = true .
+  eq exist(O,MSGS (msg STR from O' to O and O'')) = true .
+
+  eq exist(O,MSGS) = false [owise] .
+
+
+ crl [send-msg-2-temp] :
+     < O : CLIENTSHIM | contacts : CONTACTS, 
+                  bufferedMsgs : MSGS, AS >
+     < msg MSG from O' to O'' and O''' > 
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg MSG from O' to O'' and O'''), AS >
+     if exist(O'',MSGS)
+       then none
+       else createClientTcpSocket(socketManager,O',ip(O''),port + id(O') quo backLog)
+     fi  
+     if CONTACTS[O',O''] == null /\
+        ip(O) =/= ip(O'') . 
+
+  op port : -> Nat .  *** need to know in advance
+  op backLog : -> Nat .
+
+
+
+ crl [send-msg-2-str] :
+     < O : CLIENTSHIM | contacts : CONTACTS, 
+                  bufferedMsgs : MSGS, AS >
+     < msg STR from O' to O'' >
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg STR from O' to O''), AS >
+     if exist(O'',MSGS)
+       then none
+       else createClientTcpSocket(socketManager,O',ip(O''),port + id(O') quo backLog) 
+     fi   
+     if CONTACTS[O',O''] == null /\
+        ip(O) =/= ip(O'') . 
+
+
+ crl [send-msg-2-str-temp] :
+     < O : CLIENTSHIM | contacts : CONTACTS, 
+                  bufferedMsgs : MSGS, AS >
+     < msg STR from O' to O'' and O''' >
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg STR from O' to O'' and O'''), AS >
+     if exist(O'',MSGS)
+       then none
+       else createClientTcpSocket(socketManager,O',ip(O''),port + id(O') quo backLog)
+     fi
+     if CONTACTS[O',O''] == null /\
+        ip(O) =/= ip(O'') .
+
+
+ crl [send-msg-3] :
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg MSG from O' to O''), AS >
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS, AS >
+     send(CONTACTS[O',O''],O',msg2string(msg MSG from O' to O'') + "[msep]") 
+     if CONTACTS[O',O''] =/= null .  
+
+
+ crl [send-msg-3-temp] :
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS (msg MSG from O' to O'' and O'''), AS >
+   =>
+     < O : CLIENTSHIM | contacts : CONTACTS,
+                  bufferedMsgs : MSGS, AS >
+     send(CONTACTS[O',O''],O',msg2string(msg MSG from O' to O'' and O''') + "[msep]") 
+     if CONTACTS[O',O''] =/= null .  
+
+ crl [send-msg-3-str] :
+      < O : CLIENTSHIM | contacts : CONTACTS,
+                   bufferedMsgs : MSGS (msg STR from O' to O''), AS >
+    =>
+      < O : CLIENTSHIM | contacts : CONTACTS,
+                   bufferedMsgs : MSGS, AS >
+      send(CONTACTS[O',O''],O',msg2string(msg STR from O' to O'') + "[msep]")
+      if CONTACTS[O',O''] =/= null .
+
+ crl [send-msg-3-str-temp] :
+      < O : CLIENTSHIM | contacts : CONTACTS,
+                   bufferedMsgs : MSGS (msg STR from O' to O'' and O'''), AS >
+    =>
+      < O : CLIENTSHIM | contacts : CONTACTS,
+                   bufferedMsgs : MSGS, AS >
+      send(CONTACTS[O',O''],O',msg2string(msg STR from O' to O'' and O''') + "[msep]")
+      if CONTACTS[O',O''] =/= null .
+
+
+  eq sent(O,O') = none .
+
+  op {_} : Msg -> Configuration .  *** role: server
+  op <_> : Msg -> Configuration .  *** role: client
+
+endm
+
+---red substr("msg test(1) from o1 to o2 # msg", 0, find("msg test(1) from o1 to o2 # msg", "#", 0)) .
+---red substr("msg test(1) from o1 to o2 # msg", find("msg test(1) from o1 to o2 # msg", "#", 0) + 1, length("msg test(1) from o1 to o2 # msg")) .
+---red string2msg(msg2string(msg "d" from o1 to l("localhost"))) .
+

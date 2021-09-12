@@ -1,0 +1,21 @@
+  *** P *** naming
+load output-init-query
+
+mod TEST is
+  inc INTERFACE .
+  *** P ***
+  inc INIT-QUERY .
+
+  *** PVeStA interface
+  eq initState = init(initconf) .  
+
+  var T : Float .  var C : Config .  
+  
+  *** Quatex
+  op prop : Config -> Float .
+  eq prop({ C | T }) = T / 3.0 .
+  
+  eq val(0,C) = prop(C) .
+endm
+
+set clear rules off .
